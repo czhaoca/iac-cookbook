@@ -106,17 +106,98 @@ iac-cookbook/
 - Monitoring setup
 - Resource cleanup utilities
 
+## 🔒 Security & Local Configuration
+
+This is a **public repository**. All secrets, credentials, API keys, and SSH keys are stored in **`local/` directories** which are gitignored and never committed.
+
+### How It Works
+
+```
+<provider>/
+├── scripts/       # Public scripts (committed) — NO secrets
+├── templates/     # Config templates with placeholders (committed)
+├── docs/          # Documentation (committed)
+└── local/         # YOUR secrets & config (GITIGNORED — never committed)
+    ├── api-keys/  # API signing keys
+    ├── ssh/       # SSH keys for instances
+    ├── config/    # Instance configs, credentials
+    └── logs/      # Operation logs
+```
+
+### Getting Started (Local Setup)
+
+1. **Copy templates to your local config**:
+   ```bash
+   mkdir -p oci/local/config oci/local/api-keys oci/local/ssh oci/local/logs
+   cp oci/templates/oci-config.template oci/local/config/oci-config
+   cp oci/templates/instance-config.template oci/local/config/instance-config
+   ```
+
+2. **Edit with your values**:
+   ```bash
+   nano oci/local/config/oci-config
+   ```
+
+3. **Or run the interactive script** — it will guide you through setup:
+   ```bash
+   ./oci/scripts/reprovision-vm.sh
+   ```
+
+### Forking This Repository
+
+You are welcome to **fork** this repo. When you do:
+
+> ⚠️ **WARNING**: This repo is sanitized to keep secrets out. If you fork it:
+> - **Do NOT commit** any files in `local/` directories to your fork
+> - If your fork is **public**, verify `.gitignore` is intact before pushing
+> - If your fork is **private**, you still should not store secrets in git — use the `local/` directory convention
+> - Run `git diff --cached | grep -iE 'password|token|secret|key_file|ocid1\.'` before every push
+
+## OCI Scripts
+
+### VM Reprovisioning (`oci/scripts/reprovision-vm.sh`)
+
+Interactive script to reprovision an OCI compute instance with a fresh Ubuntu image by swapping the boot volume — without deleting the instance.
+
+**Features**:
+- Interactive or parameterized (CLI flags)
+- Auto-detects x86 vs ARM architecture
+- Latest Ubuntu image selection
+- SSH key management (generate, select, copy)
+- Cloud-init templates (basic Ubuntu hardening, CloudPanel)
+- Boot volume snapshot before swap (rollback safety net)
+- New admin user setup (disables default ubuntu user)
+- Dry-run mode
+- Full operation logging
+
+```bash
+# Interactive (recommended for first use)
+./oci/scripts/reprovision-vm.sh
+
+# Dry run
+./oci/scripts/reprovision-vm.sh --dry-run
+
+# See all options
+./oci/scripts/reprovision-vm.sh --help
+```
+
+**Documentation**:
+- [OCI API Key Setup Guide](oci/docs/setup-api-key.md)
+- [Reprovisioning Script Usage Guide](oci/docs/reprovision-vm.md)
+
 ## Contributing
 
 Contributions are welcome! Please follow these guidelines:
 1. Fork the repository
 2. Create a feature branch
 3. Add your scripts with proper documentation
-4. Submit a pull request
+4. **Never commit secrets** — use the `local/` directory convention
+5. Submit a pull request
 
 ## Roadmap
 
 - [x] OCI Free Tier scripts
+- [x] OCI VM Reprovisioning (boot volume swap)
 - [ ] Cloudflare services scripts
 - [ ] GCP free tier resources
 - [ ] Azure free tier resources

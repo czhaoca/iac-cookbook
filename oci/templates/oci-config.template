@@ -1,0 +1,23 @@
+[DEFAULT]
+# ============================================================================
+# OCI API Configuration
+# ============================================================================
+# Copy this file to: oci/local/config/oci-config
+# Fill in your values from the OCI Console.
+# See oci/docs/setup-api-key.md for step-by-step instructions.
+# ============================================================================
+
+# Your user OCID (OCI Console → Profile → My Profile → OCID)
+user=ocid1.user.oc1..YOUR_USER_OCID_HERE
+
+# API key fingerprint (shown when you upload the public key in OCI Console)
+fingerprint=aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99
+
+# Your tenancy OCID (OCI Console → Profile → Tenancy → OCID)
+tenancy=ocid1.tenancy.oc1..YOUR_TENANCY_OCID_HERE
+
+# Your home region (e.g., us-ashburn-1, us-phoenix-1, eu-frankfurt-1)
+region=us-ashburn-1
+
+# Path to your API private key (relative to repo root or absolute)
+key_file=oci/local/api-keys/oci_api_key.pem

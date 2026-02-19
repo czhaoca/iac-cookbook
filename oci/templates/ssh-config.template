@@ -1,0 +1,20 @@
+# ============================================================================
+# SSH Key Configuration Template
+# ============================================================================
+# Copy this file to: oci/local/config/ssh-config
+# Configure which SSH key to use for OCI instance access.
+# ============================================================================
+
+# Path to the SSH private key for connecting to instances
+# This key will be used by the reprovision script to verify SSH connectivity
+SSH_PRIVATE_KEY_PATH=oci/local/ssh/id_rsa
+
+# Path to the SSH public key to inject into new instances
+# This key will be added to the authorized_keys of the new admin user
+SSH_PUBLIC_KEY_PATH=oci/local/ssh/id_rsa.pub
+
+# SSH connection timeout in seconds (for post-provision connectivity check)
+SSH_TIMEOUT=30
+
+# SSH port (default: 22)
+SSH_PORT=22

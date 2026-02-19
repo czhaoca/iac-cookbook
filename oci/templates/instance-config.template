@@ -1,0 +1,60 @@
+# ============================================================================
+# OCI Instance Reprovisioning Configuration
+# ============================================================================
+# Copy this file to: oci/local/config/instance-config
+# Fill in your values. All fields are optional in interactive mode —
+# the script will prompt you for anything not set here.
+# ============================================================================
+
+# --- OCI Resource IDs ---
+
+# Compartment OCID where your instances live
+# (OCI Console → Identity → Compartments → select compartment → OCID)
+COMPARTMENT_OCID=ocid1.compartment.oc1..YOUR_COMPARTMENT_OCID_HERE
+
+# Instance OCID to reprovision (optional — script will list and let you choose)
+# INSTANCE_OCID=ocid1.instance.oc1..YOUR_INSTANCE_OCID_HERE
+
+# --- SSH Configuration ---
+
+# Path to SSH public key for the new OS
+# If not set, the script will list keys in oci/local/ssh/ and let you choose
+# SSH_PUBLIC_KEY_PATH=oci/local/ssh/id_rsa.pub
+
+# --- New User Configuration ---
+
+# Username for the new admin user on the reprovisioned OS
+# The default 'ubuntu' user will be disabled
+NEW_USERNAME=admin
+
+# Password for the new user (used for sudo, not SSH login)
+# SSH key-only authentication is enforced
+# NEW_PASSWORD=your_secure_password_here
+
+# --- Cloud-Init ---
+
+# Path to cloud-init YAML template
+# Available templates: oci/templates/cloud-init/basic-ubuntu.yaml
+#                      oci/templates/cloud-init/cloudpanel-ubuntu.yaml
+# CLOUD_INIT_PATH=oci/templates/cloud-init/cloudpanel-ubuntu.yaml
+
+# --- CloudPanel Configuration ---
+
+# Set to "true" to auto-install CloudPanel on the new instance
+INSTALL_CLOUDPANEL=false
+
+# CloudPanel admin email (used during CloudPanel setup)
+# CLOUDPANEL_ADMIN_EMAIL=admin@example.com
+
+# --- Architecture ---
+
+# Force architecture: x86 or arm (auto-detected from instance shape if not set)
+# ARCH=x86
+
+# --- Advanced ---
+
+# Availability domain (auto-detected if not set)
+# AVAILABILITY_DOMAIN=Uocm:US-ASHBURN-AD-1
+
+# Boot volume size in GB (default: same as current boot volume)
+# BOOT_VOLUME_SIZE_GB=50
