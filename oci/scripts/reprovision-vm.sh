@@ -45,6 +45,7 @@ DEFAULT_SSH_DIR="$REPO_ROOT/oci/local/ssh"
 DEFAULT_LOG_DIR="$REPO_ROOT/oci/local/logs"
 TIMESTAMP="$(date +%Y-%m-%d-%H%M%S)"
 LOG_FILE=""
+JSON_LOG_FILE=""
 
 # --- Script State ---
 DRY_RUN=false
@@ -132,7 +133,76 @@ log_quiet() {
 die() {
     print_error "$1"
     log_quiet "FATAL: $1"
+    json_step_update "failed" "$1"
+    json_finalize "failed" "$1"
     exit 1
+}
+
+# --- JSON transaction log helpers ---
+# Append a step entry to the JSON log
+json_step() {
+    local step="$1"
+    local description="$2"
+    local status="${3:-started}"
+    [[ -z "${JSON_LOG_FILE:-}" || ! -f "$JSON_LOG_FILE" ]] && return 0
+    local tmp
+    tmp=$(mktemp)
+    jq --arg step "$step" \
+       --arg desc "$description" \
+       --arg status "$status" \
+       --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+       '.steps += [{step: $step, description: $desc, status: $status, timestamp: $ts}]' \
+       "$JSON_LOG_FILE" > "$tmp" && mv "$tmp" "$JSON_LOG_FILE"
+}
+
+# Update the last step's status and optionally add detail fields
+json_step_update() {
+    local status="$1"
+    local message="${2:-}"
+    [[ -z "${JSON_LOG_FILE:-}" || ! -f "$JSON_LOG_FILE" ]] && return 0
+    local tmp
+    tmp=$(mktemp)
+    jq --arg status "$status" \
+       --arg msg "$message" \
+       --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+       'if (.steps | length) > 0 then
+          .steps[-1].status = $status |
+          .steps[-1].completed_at = $ts |
+          if ($msg != "") then .steps[-1].message = $msg else . end
+        else . end' \
+       "$JSON_LOG_FILE" > "$tmp" && mv "$tmp" "$JSON_LOG_FILE"
+}
+
+# Write final summary fields to the JSON log
+json_finalize() {
+    local status="$1"
+    local message="${2:-}"
+    [[ -z "${JSON_LOG_FILE:-}" || ! -f "$JSON_LOG_FILE" ]] && return 0
+    local tmp
+    tmp=$(mktemp)
+    jq --arg status "$status" \
+       --arg msg "$message" \
+       --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+       --arg instance "${INSTANCE_OCID:-}" \
+       --arg image "${IMAGE_OCID:-}" \
+       --arg new_bv "${new_bv_id:-}" \
+       --arg old_bv "${CURRENT_BOOT_VOLUME_ID:-}" \
+       --arg user "${NEW_USERNAME:-}" \
+       --argjson delete_old "${DELETE_OLD_BV:-false}" \
+       --argjson dry_run "${DRY_RUN:-false}" \
+       '.result = {
+          status: $status,
+          message: $msg,
+          completed_at: $ts,
+          instance_ocid: $instance,
+          image_ocid: $image,
+          new_boot_volume_ocid: $new_bv,
+          old_boot_volume_ocid: $old_bv,
+          admin_user: $user,
+          old_bv_deleted: $delete_old,
+          dry_run: $dry_run
+        }' \
+       "$JSON_LOG_FILE" > "$tmp" && mv "$tmp" "$JSON_LOG_FILE"
 }
 
 confirm() {
@@ -307,8 +377,23 @@ init() {
     # Create log directory
     mkdir -p "$DEFAULT_LOG_DIR"
     LOG_FILE="$DEFAULT_LOG_DIR/reprovision-${TIMESTAMP}.log"
+    JSON_LOG_FILE="$DEFAULT_LOG_DIR/reprovision-${TIMESTAMP}.json"
     log_quiet "=== Reprovision session started at $(date) ==="
     log_quiet "Dry-run: $DRY_RUN"
+    # Initialize JSON transaction log
+    jq -n \
+      --arg ts "$TIMESTAMP" \
+      --argjson dry_run "$DRY_RUN" \
+      '{
+        session: {
+          timestamp: $ts,
+          started_at: (now | todate),
+          dry_run: $dry_run,
+          script_version: "2.0"
+        },
+        steps: [],
+        result: {status: "in_progress"}
+      }' > "$JSON_LOG_FILE"
 
     # Check dependencies
     print_step "Checking dependencies..."
@@ -1724,9 +1809,12 @@ step_execute() {
     log "Starting reprovisioning workflow..."
 
     # --- 8.0: Pre-flight quota check ---
+    json_step "8.0-quota-check" "Pre-flight storage quota check"
     check_storage_quota
+    json_step_update "done"
 
     # --- 8.0b: Detect recovery from previous failed run ---
+    json_step "8.0b-state-check" "Checking instance and boot volume state"
     print_step "Checking instance state..."
     local instance_state
     instance_state=$(oci_cmd compute instance get \
@@ -1739,6 +1827,7 @@ step_execute() {
         --availability-domain "$AVAILABILITY_DOMAIN" \
         --instance-id "$INSTANCE_OCID" 2>/dev/null \
         | jq -r '[.data[] | select(.["lifecycle-state"] == "ATTACHED")] | length')
+    json_step_update "done" "instance_state=${instance_state}, bv_attached=${current_attach_state}"
 
     if [[ "$instance_state" == "STOPPED" && "$current_attach_state" == "0" ]]; then
         print_warning "Recovery detected: Instance is STOPPED with NO boot volume attached."
@@ -1753,6 +1842,7 @@ step_execute() {
             "Re-attach old BV and abort (restore previous state)")
 
         if [[ "$recovery_action" == "2" ]]; then
+            json_step "8.0c-recovery-abort" "Re-attaching old BV and aborting"
             print_info "Re-attaching old boot volume..."
             oci_cmd_checked compute boot-volume-attachment attach \
                 --boot-volume-id "$CURRENT_BOOT_VOLUME_ID" \
@@ -1765,10 +1855,13 @@ step_execute() {
                 --action START 2>/dev/null >/dev/null
             wait_for_state "instance" "$INSTANCE_OCID" "RUNNING"
             print_success "Instance restored to previous state."
+            json_step_update "done" "Instance restored; user chose to abort replacement"
+            json_finalize "aborted" "User chose to restore previous state instead of replacing"
             exit 0
         fi
 
         # Re-attach old BV so the replace API works
+        json_step "8.0c-recovery-reattach" "Re-attaching old BV for recovery (continue with replace)"
         print_step "8.1 Re-attaching old boot volume for replacement..."
         oci_cmd_checked compute boot-volume-attachment attach \
             --boot-volume-id "$CURRENT_BOOT_VOLUME_ID" \
@@ -1787,9 +1880,11 @@ step_execute() {
             sleep 30
         fi
         print_success "Old boot volume re-attached. Ready for replacement."
+        json_step_update "done"
     fi
 
     # --- 8.2: Prepare metadata ---
+    json_step "8.2-metadata" "Preparing instance metadata (SSH key + cloud-init)"
     print_step "8.2 Preparing instance metadata..."
     local ssh_pub_key
     ssh_pub_key=$(cat "$SSH_PUBLIC_KEY_PATH")
@@ -1808,20 +1903,24 @@ step_execute() {
             '{"ssh_authorized_keys": $ssh}')
     fi
     print_success "Metadata prepared (SSH key + cloud-init)"
+    json_step_update "done"
 
     # --- 8.3: Stop instance if running ---
     if [[ "$instance_state" == "RUNNING" ]]; then
+        json_step "8.3-stop" "Stopping instance for boot volume replacement"
         print_step "8.3 Stopping instance for boot volume replacement..."
         oci_cmd compute instance action \
             --instance-id "$INSTANCE_OCID" \
             --action SOFTSTOP 2>/dev/null >/dev/null
         log "Stop command sent"
         wait_for_state "instance" "$INSTANCE_OCID" "STOPPED"
+        json_step_update "done"
     else
         print_step "8.3 Instance already stopped — skipping"
     fi
 
     # --- 8.4: Replace boot volume via image (single API call) ---
+    json_step "8.4-replace-bv" "Replace boot volume via OCI atomic API"
     print_step "8.4 Replacing boot volume with new Ubuntu image..."
     print_info "This is an atomic operation: OCI will create a new boot volume from the image,"
     print_info "detach the old one, attach the new one, and start the instance."
@@ -1892,20 +1991,24 @@ step_execute() {
     log "Replace boot volume complete. Instance state: $new_state, new BV: $new_bv_id"
     print_success "Boot volume replaced! New BV: $new_bv_id"
     print_detail "Instance state: $new_state"
+    json_step_update "done" "new_bv=${new_bv_id}, instance_state=${new_state}"
 
     # --- 8.5: Start instance if not already running ---
     if [[ "$new_state" != "RUNNING" ]]; then
+        json_step "8.5-start" "Starting instance"
         print_step "8.5 Starting instance..."
         oci_cmd compute instance action \
             --instance-id "$INSTANCE_OCID" \
             --action START 2>/dev/null >/dev/null || true
         log "Start command sent"
         wait_for_state "instance" "$INSTANCE_OCID" "RUNNING"
+        json_step_update "done"
     else
         print_step "8.5 Instance already running"
     fi
 
     # --- 8.6: Verify SSH connectivity ---
+    json_step "8.6-ssh-verify" "Verifying SSH connectivity"
     print_step "8.6 Verifying SSH connectivity..."
     print_info "Waiting 60 seconds for cloud-init to start..."
     sleep 60
@@ -1942,13 +2045,16 @@ step_execute() {
 
         if $connected; then
             print_success "SSH connection verified! Instance is ready."
+            json_step_update "done" "ssh_ok=${ssh_user}@${public_ip}"
         else
             print_warning "SSH connection could not be verified after $retries attempts."
             print_info "The instance may still be running cloud-init. Try manually:"
             print_detail "ssh $ssh_key_flag ${ssh_user}@${public_ip}"
+            json_step_update "warning" "SSH not yet available; try: ssh $ssh_key_flag ${ssh_user}@${public_ip}"
         fi
     else
         print_warning "No public IP found. SSH verification skipped."
+        json_step_update "warning" "No public IP found"
     fi
 
     log "Reprovisioning complete"
@@ -1973,6 +2079,7 @@ step_summary() {
     print_detail "Admin User:        $NEW_USERNAME"
     print_detail "CloudPanel:        $INSTALL_CLOUDPANEL"
     print_detail "Log File:          $LOG_FILE"
+    print_detail "JSON Log:          $JSON_LOG_FILE"
     echo ""
 
     if ! $DELETE_OLD_BV; then
@@ -2003,15 +2110,45 @@ step_summary() {
 main() {
     parse_args "$@"
     init
+
+    json_step "1-oci-auth"   "OCI Profile & API Configuration"
     step_verify_oci_config
+    json_step_update "done"
+
+    json_step "2-instance"   "Select Instance to Reprovision"
     step_select_instance
+    json_step_update "done"
+
+    json_step "3-image"      "Select Ubuntu Image"
     step_select_image
+    json_step_update "done"
+
+    json_step "4-ssh-key"    "SSH Key Configuration"
     step_ssh_key
+    json_step_update "done"
+
+    json_step "5-user-config" "OS User & Password Configuration"
     step_user_config
+    json_step_update "done"
+
+    json_step "6-cloud-init" "Cloud-Init Configuration"
     step_cloud_init
+    json_step_update "done"
+
+    json_step "7-confirm"    "Final Confirmation"
     step_confirm
+    json_step_update "done"
+
+    json_step "8-execute"    "Execute Boot Volume Replacement"
     step_execute
+    json_step_update "done"
+
+    json_finalize "success" "Boot volume replacement completed"
+    json_step "9-summary"    "Summary"
     step_summary
+    json_step_update "done"
+
+    print_detail "JSON log: $JSON_LOG_FILE"
 }
 
 main "$@"
