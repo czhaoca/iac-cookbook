@@ -314,75 +314,229 @@ init() {
 # Step 1: Verify OCI API Configuration
 # ============================================================================
 
-step_verify_oci_config() {
-    print_header "Step 1: OCI API Configuration"
-
-    print_info "The OCI CLI needs an API signing key to authenticate."
-    print_info "Config file location: ${OCI_CONFIG}"
+# --- Auth Method A: Browser-based bootstrap (easiest) ---
+setup_oci_bootstrap() {
+    print_step "Browser-Based Setup (oci setup bootstrap)"
+    echo ""
+    print_info "This will open a browser window for you to log into OCI."
+    print_info "The CLI will automatically:"
+    print_detail "• Generate an API signing key pair"
+    print_detail "• Upload the public key to your OCI account"
+    print_detail "• Create the config file"
+    echo ""
+    print_info "Requirements:"
+    print_detail "• A web browser accessible from this machine"
+    print_detail "• Port 8181 must be available (used for the auth callback)"
     echo ""
 
-    if [[ ! -f "$OCI_CONFIG" ]]; then
-        print_warning "OCI config file not found at: $OCI_CONFIG"
+    if ! confirm "Ready to open the browser login?"; then
+        return 1
+    fi
+
+    mkdir -p "$REPO_ROOT/oci/local/config"
+
+    # Run oci setup bootstrap with our config location
+    if oci setup bootstrap --config-location "$OCI_CONFIG"; then
+        print_success "OCI bootstrap complete! Config saved to: $OCI_CONFIG"
+        log_quiet "OCI config created via bootstrap at $OCI_CONFIG"
+        return 0
+    else
+        print_error "Bootstrap failed. You can try another method."
+        return 1
+    fi
+}
+
+# --- Auth Method B: Interactive CLI setup (oci setup config) ---
+setup_oci_interactive_cli() {
+    print_step "Interactive CLI Setup (oci setup config)"
+    echo ""
+    print_info "This walks you through creating a config file step by step."
+    print_info "You'll need to provide your OCIDs — here's where to find them:"
+    echo ""
+    echo -e "${BOLD}  ┌─────────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${BOLD}  │  HOW TO FIND YOUR OCI IDENTIFIERS                              │${NC}"
+    echo -e "${BOLD}  ├─────────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${BOLD}  │                                                                 │${NC}"
+    echo -e "${BOLD}  │${NC}  ${CYAN}User OCID:${NC}                                                    ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    1. Log in to ${YELLOW}https://cloud.oracle.com${NC}                        ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    2. Click your ${CYAN}Profile icon${NC} (top-right corner)                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    3. Click ${CYAN}\"My Profile\"${NC} (or \"User Settings\")                    ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    4. Under your username, click ${CYAN}\"Copy\"${NC} next to OCID             ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    → Looks like: ${YELLOW}ocid1.user.oc1..aaaaaa...${NC}                      ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}                                                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  ${CYAN}Tenancy OCID:${NC}                                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    1. Click your ${CYAN}Profile icon${NC} (top-right corner)                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    2. Click ${CYAN}\"Tenancy: <your-tenancy-name>\"${NC}                       ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    3. Click ${CYAN}\"Copy\"${NC} next to OCID                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    → Looks like: ${YELLOW}ocid1.tenancy.oc1..aaaaaa...${NC}                   ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}                                                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  ${CYAN}Region:${NC}                                                       ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    Shown in the top bar of OCI Console                          ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    → Examples: ${YELLOW}us-ashburn-1${NC}, ${YELLOW}us-phoenix-1${NC}, ${YELLOW}eu-frankfurt-1${NC}      ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}                                                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  └─────────────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+
+    if ! confirm "Do you have your User OCID and Tenancy OCID ready?"; then
+        print_info "Take your time. Here's what to do:"
+        print_detail "1. Open ${YELLOW}https://cloud.oracle.com${NC} in a browser"
+        print_detail "2. Sign in with your OCI account"
+        print_detail "3. Follow the steps in the box above to copy your OCIDs"
         echo ""
-        print_info "Let's set up your OCI API configuration."
-        print_info "You'll need the following from the OCI Console:"
-        print_detail "1. User OCID     — Profile → My Profile → OCID"
-        print_detail "2. Tenancy OCID  — Profile → Tenancy → OCID"
-        print_detail "3. Region        — Shown in top bar (e.g., us-ashburn-1)"
-        print_detail "4. API key pair  — We'll generate this now"
-        echo ""
+        read -r -p "$(echo -e "${BOLD}  Press Enter when you're ready to continue...${NC}")"
+    fi
 
-        # Create directories
-        mkdir -p "$REPO_ROOT/oci/local/config"
-        mkdir -p "$REPO_ROOT/oci/local/api-keys"
+    mkdir -p "$REPO_ROOT/oci/local/config"
+    mkdir -p "$REPO_ROOT/oci/local/api-keys"
 
-        # Generate API key pair
-        print_step "Generating OCI API signing key pair..."
-        local key_path="$REPO_ROOT/oci/local/api-keys/oci_api_key.pem"
-        local pub_path="$REPO_ROOT/oci/local/api-keys/oci_api_key_public.pem"
+    echo ""
+    print_step "Let's configure your OCI access step by step."
+    echo ""
 
-        if [[ -f "$key_path" ]]; then
-            print_info "API key already exists at: $key_path"
-        else
-            openssl genrsa -out "$key_path" 2048 2>/dev/null
-            chmod 600 "$key_path"
-            openssl rsa -pubout -in "$key_path" -out "$pub_path" 2>/dev/null
-            print_success "Key pair generated:"
-            print_detail "Private: $key_path"
-            print_detail "Public:  $pub_path"
-        fi
+    # Tenancy OCID first (most fundamental)
+    print_info "${CYAN}Step 1 of 4: Tenancy OCID${NC}"
+    print_detail "This identifies your OCI account/organization."
+    print_detail "Find it: Profile icon → Tenancy → Copy OCID"
+    local tenancy_ocid
+    tenancy_ocid=$(prompt_input "Paste your Tenancy OCID")
+    while [[ ! "$tenancy_ocid" =~ ^ocid1\.tenancy\. ]]; do
+        print_warning "That doesn't look like a tenancy OCID (should start with 'ocid1.tenancy.')"
+        tenancy_ocid=$(prompt_input "Paste your Tenancy OCID")
+    done
+    print_success "Tenancy OCID saved"
+    echo ""
 
-        # Show fingerprint
-        local fingerprint
-        fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
-        print_info "Key fingerprint: $fingerprint"
-        echo ""
+    # User OCID
+    print_info "${CYAN}Step 2 of 4: User OCID${NC}"
+    print_detail "This identifies your OCI user account."
+    print_detail "Find it: Profile icon → My Profile → Copy OCID"
+    local user_ocid
+    user_ocid=$(prompt_input "Paste your User OCID")
+    while [[ ! "$user_ocid" =~ ^ocid1\.user\. ]]; do
+        print_warning "That doesn't look like a user OCID (should start with 'ocid1.user.')"
+        user_ocid=$(prompt_input "Paste your User OCID")
+    done
+    print_success "User OCID saved"
+    echo ""
 
-        # Show the public key for upload
-        print_step "Upload this public key to the OCI Console:"
-        print_info "Go to: OCI Console → Profile → My Profile → API Keys → Add API Key"
-        print_info "Select 'Paste Public Key' and paste the following:"
-        echo ""
-        echo -e "${YELLOW}$(cat "$pub_path")${NC}"
-        echo ""
+    # Region
+    print_info "${CYAN}Step 3 of 4: Region${NC}"
+    print_detail "Your home region — shown in the OCI Console top bar."
+    print_detail "Common regions: us-ashburn-1, us-phoenix-1, us-sanjose-1,"
+    print_detail "                eu-frankfurt-1, ap-tokyo-1, uk-london-1"
+    local region
+    region=$(prompt_input "Enter your region" "us-ashburn-1")
+    print_success "Region: $region"
+    echo ""
 
-        if ! $NON_INTERACTIVE; then
-            read -r -p "$(echo -e "${BOLD}  Press Enter after you've uploaded the key to OCI Console...${NC}")"
-        fi
+    # API Key
+    print_info "${CYAN}Step 4 of 4: API Signing Key${NC}"
+    print_detail "OCI uses RSA key pairs for API authentication."
+    print_detail "We need a private key on this machine and the matching"
+    print_detail "public key uploaded to your OCI user profile."
+    echo ""
 
-        # Collect OCI config values
-        echo ""
-        print_step "Now enter your OCI configuration values:"
-        print_info "These are shown in the 'Configuration File Preview' after uploading your key."
-        echo ""
-        local user_ocid tenancy_ocid region
+    local key_path="$REPO_ROOT/oci/local/api-keys/oci_api_key.pem"
+    local pub_path="$REPO_ROOT/oci/local/api-keys/oci_api_key_public.pem"
 
-        user_ocid=$(prompt_input "User OCID (ocid1.user.oc1..)")
-        tenancy_ocid=$(prompt_input "Tenancy OCID (ocid1.tenancy.oc1..)")
-        region=$(prompt_input "Region" "us-ashburn-1")
+    local key_action
+    if [[ -f "$key_path" ]]; then
+        print_info "An API key already exists at: $key_path"
+        key_action=$(prompt_selection "What would you like to do?" \
+            "Use the existing key" \
+            "Generate a new key (overwrites existing)" \
+            "Use OCI CLI to generate (oci setup keys)")
+    else
+        key_action=$(prompt_selection "How would you like to set up the API key?" \
+            "Generate a new key pair automatically (Recommended)" \
+            "Use OCI CLI to generate (oci setup keys)" \
+            "I already have a key — let me provide the path")
+    fi
 
-        # Write config file
-        cat > "$OCI_CONFIG" <<EOF
+    local fingerprint=""
+
+    case "$key_action" in
+        0)
+            # Use existing or generate new
+            if [[ ! -f "$key_path" ]] || confirm "Generate a new key pair?"; then
+                print_step "Generating 2048-bit RSA key pair..."
+                openssl genrsa -out "$key_path" 2048 2>/dev/null
+                chmod 600 "$key_path"
+                openssl rsa -pubout -in "$key_path" -out "$pub_path" 2>/dev/null
+                print_success "Key pair generated:"
+                print_detail "Private: $key_path"
+                print_detail "Public:  $pub_path"
+            fi
+            fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
+            ;;
+        1)
+            # Use oci setup keys
+            print_step "Running: oci setup keys"
+            oci setup keys \
+                --output-dir "$REPO_ROOT/oci/local/api-keys" \
+                --key-name oci_api_key \
+                --overwrite
+            # oci setup keys produces oci_api_key.pem and oci_api_key_public.pem
+            key_path="$REPO_ROOT/oci/local/api-keys/oci_api_key.pem"
+            pub_path="$REPO_ROOT/oci/local/api-keys/oci_api_key_public.pem"
+            if [[ ! -f "$key_path" ]]; then
+                # oci setup keys uses _public suffix on the public key
+                pub_path="$REPO_ROOT/oci/local/api-keys/oci_api_key_public.pem"
+            fi
+            fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
+            print_success "Keys generated via OCI CLI"
+            ;;
+        2)
+            # User provides path
+            key_path=$(prompt_input "Path to your private key (.pem)")
+            while [[ ! -f "$key_path" ]]; do
+                print_warning "File not found: $key_path"
+                key_path=$(prompt_input "Path to your private key (.pem)")
+            done
+            fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
+            pub_path="${key_path%.pem}_public.pem"
+            if [[ ! -f "$pub_path" ]]; then
+                openssl rsa -pubout -in "$key_path" -out "$pub_path" 2>/dev/null
+            fi
+            print_success "Using existing key: $key_path"
+            ;;
+    esac
+
+    print_info "Key fingerprint: $fingerprint"
+    echo ""
+
+    # Guide user to upload the public key
+    print_step "Now upload the public key to your OCI account"
+    echo ""
+    echo -e "${BOLD}  ┌─────────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${BOLD}  │  UPLOAD YOUR PUBLIC KEY TO OCI                                  │${NC}"
+    echo -e "${BOLD}  ├─────────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${BOLD}  │${NC}                                                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  1. Go to ${YELLOW}https://cloud.oracle.com${NC}                              ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  2. Click ${CYAN}Profile icon${NC} (top-right) → ${CYAN}\"My Profile\"${NC}               ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  3. Scroll to ${CYAN}\"API Keys\"${NC} section (left sidebar or scroll)       ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  4. Click ${CYAN}\"Add API Key\"${NC}                                         ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  5. Select ${CYAN}\"Paste a Public Key\"${NC}                                  ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  6. Paste the key shown below                                   ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  7. Click ${CYAN}\"Add\"${NC}                                                  ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}                                                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  After clicking Add, OCI will show a                             ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  ${GREEN}\"Configuration File Preview\"${NC} — you don't need to copy it,      ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  we already have all the values.                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}                                                                 ${BOLD}│${NC}"
+    echo -e "${BOLD}  └─────────────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -e "${BOLD}  Your public key to paste:${NC}"
+    echo -e "${YELLOW}"
+    cat "$pub_path"
+    echo -e "${NC}"
+
+    if ! $NON_INTERACTIVE; then
+        read -r -p "$(echo -e "${BOLD}  Press Enter after you've uploaded the key to OCI Console...${NC}")"
+    fi
+
+    # Write config file
+    cat > "$OCI_CONFIG" <<EOF
 [DEFAULT]
 user=${user_ocid}
 fingerprint=${fingerprint}
@@ -390,29 +544,159 @@ tenancy=${tenancy_ocid}
 region=${region}
 key_file=${key_path}
 EOF
-        chmod 600 "$OCI_CONFIG"
-        print_success "OCI config saved to: $OCI_CONFIG"
-        log_quiet "OCI config created at $OCI_CONFIG"
+    chmod 600 "$OCI_CONFIG"
+    print_success "OCI config saved to: $OCI_CONFIG"
+    log_quiet "OCI config created at $OCI_CONFIG (interactive CLI method)"
+}
+
+# --- Auth Method C: Use existing config ---
+setup_oci_existing_config() {
+    print_step "Use Existing OCI Configuration"
+    echo ""
+
+    # Check common locations
+    local found_configs=()
+    local found_labels=()
+
+    if [[ -f "$HOME/.oci/config" ]]; then
+        found_configs+=("$HOME/.oci/config")
+        found_labels+=("~/.oci/config (standard OCI CLI location)")
     fi
 
-    # Test connectivity
-    print_step "Testing OCI API connectivity..."
-    if oci_cmd iam region list --output table 2>/dev/null | head -5; then
-        print_success "OCI API connection successful!"
-        log_quiet "OCI API connection verified"
-    else
-        die "OCI API connection failed. Check your config at: $OCI_CONFIG"
+    # Check for any profile configs
+    if [[ -d "$HOME/.oci" ]]; then
+        while IFS= read -r f; do
+            if [[ "$f" != "$HOME/.oci/config" && -f "$f" ]]; then
+                found_configs+=("$f")
+                found_labels+=("$f")
+            fi
+        done < <(find "$HOME/.oci" -name "config*" -type f 2>/dev/null)
+    fi
+
+    found_labels+=("Enter a custom path")
+
+    if [[ ${#found_configs[@]} -gt 0 ]]; then
+        print_info "Found existing OCI configurations:"
+        local idx
+        idx=$(prompt_selection "Choose a config to use:" "${found_labels[@]}")
+
+        if [[ $idx -lt ${#found_configs[@]} ]]; then
+            local src="${found_configs[$idx]}"
+            mkdir -p "$(dirname "$OCI_CONFIG")"
+            cp "$src" "$OCI_CONFIG"
+            chmod 600 "$OCI_CONFIG"
+            print_success "Copied $src → $OCI_CONFIG"
+            # Verify key_file path is accessible
+            local key_file
+            key_file=$(grep '^key_file=' "$OCI_CONFIG" | cut -d= -f2 | xargs)
+            if [[ -n "$key_file" && ! -f "$key_file" ]]; then
+                # Try expanding ~ or relative paths
+                local expanded="${key_file/#\~/$HOME}"
+                if [[ -f "$expanded" ]]; then
+                    sed -i "s|^key_file=.*|key_file=${expanded}|" "$OCI_CONFIG"
+                    print_info "Updated key_file path to: $expanded"
+                else
+                    print_warning "API key not found at: $key_file"
+                    print_info "You may need to update the key_file path in: $OCI_CONFIG"
+                fi
+            fi
+            return 0
+        fi
+    fi
+
+    # Custom path
+    local custom_path
+    custom_path=$(prompt_input "Enter path to your OCI config file")
+    while [[ ! -f "$custom_path" ]]; do
+        print_warning "File not found: $custom_path"
+        custom_path=$(prompt_input "Enter path to your OCI config file")
+    done
+    mkdir -p "$(dirname "$OCI_CONFIG")"
+    cp "$custom_path" "$OCI_CONFIG"
+    chmod 600 "$OCI_CONFIG"
+    print_success "Copied $custom_path → $OCI_CONFIG"
+}
+
+# --- Main auth step ---
+step_verify_oci_config() {
+    print_header "Step 1: OCI API Configuration"
+
+    print_info "To manage OCI resources, the CLI needs API credentials."
+    print_info "This script stores the config in: ${CYAN}${OCI_CONFIG}${NC}"
+    print_info "(This file is gitignored — your credentials stay local.)"
+    echo ""
+
+    if [[ -f "$OCI_CONFIG" ]]; then
+        print_success "OCI config found at: $OCI_CONFIG"
+        print_info "Testing connectivity..."
+        echo ""
+        if oci_cmd iam region list --output table 2>/dev/null | head -5; then
+            print_success "OCI API connection successful!"
+            log_quiet "OCI API connection verified (existing config)"
+        else
+            print_warning "Connection failed with existing config."
+            if confirm "Re-configure OCI API access?"; then
+                rm -f "$OCI_CONFIG"
+                # Fall through to setup below
+            else
+                die "Cannot continue without working OCI API access."
+            fi
+        fi
+    fi
+
+    if [[ ! -f "$OCI_CONFIG" ]]; then
+        print_info "No OCI config found. Let's set one up."
+        print_info "Choose how you'd like to authenticate with OCI:"
+        echo ""
+
+        local method
+        method=$(prompt_selection "Choose an authentication method:" \
+            "Browser login (easiest — opens browser, auto-configures everything)" \
+            "Interactive CLI setup (step-by-step — paste OCIDs, generate/provide key)" \
+            "Use existing OCI config (copy from ~/.oci/config or custom path)")
+
+        echo ""
+        local setup_ok=false
+        case "$method" in
+            0) setup_oci_bootstrap && setup_ok=true ;;
+            1) setup_oci_interactive_cli && setup_ok=true ;;
+            2) setup_oci_existing_config && setup_ok=true ;;
+        esac
+
+        if ! $setup_ok; then
+            die "OCI configuration was not completed."
+        fi
+
+        # Test connectivity
+        echo ""
+        print_step "Testing OCI API connectivity..."
+        if oci_cmd iam region list --output table 2>/dev/null | head -5; then
+            print_success "OCI API connection successful!"
+            log_quiet "OCI API connection verified"
+        else
+            print_error "Connection failed. Common issues:"
+            print_detail "• API key not uploaded to OCI Console yet"
+            print_detail "• Fingerprint mismatch (re-generate and re-upload key)"
+            print_detail "• User/Tenancy OCID typo (verify in OCI Console)"
+            print_detail "• Region incorrect (check OCI Console top bar)"
+            echo ""
+            print_info "Your config file: $OCI_CONFIG"
+            print_info "Edit it with: nano $OCI_CONFIG"
+            die "OCI API connection failed. Fix the config and re-run."
+        fi
     fi
 
     # Get tenancy for later use
     local tenancy_ocid
-    tenancy_ocid=$(grep '^tenancy=' "$OCI_CONFIG" | cut -d= -f2)
+    tenancy_ocid=$(grep '^tenancy=' "$OCI_CONFIG" | cut -d= -f2 | xargs)
 
     # Get or prompt for compartment OCID
     if [[ -z "$COMPARTMENT_OCID" ]]; then
         echo ""
         print_step "Select a compartment"
-        print_info "A compartment is an OCI container for organizing resources."
+        print_info "A compartment is an OCI container for organizing your cloud resources."
+        print_info "Most users have a 'root' compartment (the tenancy itself) and may"
+        print_info "have additional compartments for different projects or environments."
         print_info "Listing compartments in your tenancy..."
         echo ""
 
@@ -427,21 +711,26 @@ EOF
         local comp_ids=()
 
         # Add root compartment (tenancy)
-        comp_names+=("Root compartment (tenancy)")
+        comp_names+=("Root compartment (tenancy) — use if unsure")
         comp_ids+=("$tenancy_ocid")
 
         while IFS= read -r line; do
-            local name id
+            local name id desc
             name=$(echo "$line" | jq -r '.name')
             id=$(echo "$line" | jq -r '.id')
-            comp_names+=("$name")
+            desc=$(echo "$line" | jq -r '.description // ""' | head -c 50)
+            if [[ -n "$desc" ]]; then
+                comp_names+=("$name — $desc")
+            else
+                comp_names+=("$name")
+            fi
             comp_ids+=("$id")
         done < <(echo "$compartments" | jq -c '.data[]')
 
         local idx
-        idx=$(prompt_selection "Choose a compartment:" "${comp_names[@]}")
+        idx=$(prompt_selection "Choose the compartment where your instances live:" "${comp_names[@]}")
         COMPARTMENT_OCID="${comp_ids[$idx]}"
-        print_success "Selected compartment: ${comp_names[$idx]}"
+        print_success "Selected: ${comp_names[$idx]}"
         log_quiet "Compartment: ${comp_names[$idx]} ($COMPARTMENT_OCID)"
     fi
 }
