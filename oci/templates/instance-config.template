@@ -49,6 +49,10 @@ INSTALL_CLOUDPANEL=false
 # CloudPanel admin email (used during CloudPanel setup)
 # CLOUDPANEL_ADMIN_EMAIL=admin@example.com
 
+# CloudPanel database engine: MYSQL_8.4, MYSQL_8.0, MARIADB_11.4, MARIADB_10.11
+# Ref: https://www.cloudpanel.io/docs/v2/getting-started/oracle-cloud/installation/installer/
+CLOUDPANEL_DB_ENGINE=MYSQL_8.4
+
 # --- Architecture ---
 
 # Force architecture: x86 or arm (auto-detected from instance shape if not set)

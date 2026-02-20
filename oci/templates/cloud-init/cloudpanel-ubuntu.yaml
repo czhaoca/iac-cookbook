@@ -1,25 +1,28 @@
 #cloud-config
 # ============================================================================
-# CloudPanel + Ubuntu Hardening — Cloud-Init Template
+# CloudPanel + Ubuntu Hardening — Cloud-Init Template (OCI)
 # ============================================================================
 # This template:
 # - Creates a new admin user with SSH key-only access
 # - Disables the default 'ubuntu' user login
 # - Disables password-based SSH authentication
-# - Installs CloudPanel (https://www.cloudpanel.io/)
+# - Installs CloudPanel via official OCI installer with checksum verification
 # - Configures firewall for CloudPanel ports (8443) + SSH (22) + HTTP/HTTPS
 # - Enables automatic security updates
+# - Reboots after installation (required by CloudPanel)
 #
 # Variables (replaced by reprovision-vm.sh at runtime):
-#   __NEW_USERNAME__       — new admin username
-#   __NEW_PASSWORD_HASH__  — hashed password for sudo
-#   __SSH_PUBLIC_KEY__     — SSH public key content
-#   __CLOUDPANEL_DB_PASS__ — CloudPanel database password (optional)
+#   __NEW_USERNAME__         — new admin username
+#   __NEW_PASSWORD_HASH__    — hashed password for sudo
+#   __SSH_PUBLIC_KEY__       — SSH public key content
+#   __CLOUDPANEL_DB_ENGINE__ — database engine (default: MYSQL_8.4)
 #
 # CloudPanel Requirements:
-# - Ubuntu 22.04 or 24.04 (x86_64 or ARM64)
+# - Ubuntu 24.04 or 22.04 (x86_64 or ARM64)
 # - Minimum 1 GB RAM, 10 GB disk
 # - Fresh OS installation (no existing web server)
+#
+# Ref: https://www.cloudpanel.io/docs/v2/getting-started/oracle-cloud/installation/installer/
 # ============================================================================
 
 users:
@@ -53,16 +56,21 @@ runcmd:
   - ufw allow 8443/tcp   # CloudPanel admin
   - ufw --force enable
 
-  # Install CloudPanel
-  # Official installer: https://www.cloudpanel.io/docs/v2/getting-started/
+  # Install CloudPanel — official OCI installer with checksum verification
+  # Ref: https://www.cloudpanel.io/docs/v2/getting-started/oracle-cloud/installation/installer/
   - apt-get update -y
   - apt-get upgrade -y
-  - curl -sSL https://installer.cloudpanel.io/ce/v2/install.sh -o /tmp/cloudpanel-install.sh
-  - bash /tmp/cloudpanel-install.sh
+  - apt-get install -y curl wget sudo cron
+  - curl -sS https://installer.cloudpanel.io/ce/v2/install.sh -o /tmp/install.sh
+  - echo "19cfa702e7936a79e47812ff57d9859175ea902c62a68b2c15ccd1ebaf36caeb /tmp/install.sh" | sha256sum -c
+  - CLOUD=oci DB_ENGINE=__CLOUDPANEL_DB_ENGINE__ bash /tmp/install.sh
 
   # Auto security updates
   - apt-get install -y unattended-upgrades
   - dpkg-reconfigure -plow unattended-upgrades
+
+  # Reboot (required by CloudPanel after installation)
+  - reboot
 
 package_update: true
 package_upgrade: true
@@ -71,4 +79,5 @@ packages:
   - wget
   - vim
   - htop
+  - cron
   - unattended-upgrades

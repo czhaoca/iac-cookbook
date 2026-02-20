@@ -44,6 +44,7 @@ NEW_USERNAME=""
 NEW_PASSWORD=""
 INSTALL_CLOUDPANEL=false
 CLOUDPANEL_ADMIN_EMAIL=""
+CLOUDPANEL_DB_ENGINE="MYSQL_8.4"
 BOOT_VOLUME_SIZE_GB=""
 AVAILABILITY_DOMAIN=""
 
@@ -313,6 +314,7 @@ init() {
                 NEW_PASSWORD)          [[ -z "$NEW_PASSWORD" ]] && NEW_PASSWORD="$value" ;;
                 INSTALL_CLOUDPANEL)    INSTALL_CLOUDPANEL="$value" ;;
                 CLOUDPANEL_ADMIN_EMAIL) CLOUDPANEL_ADMIN_EMAIL="$value" ;;
+                CLOUDPANEL_DB_ENGINE) CLOUDPANEL_DB_ENGINE="$value" ;;
                 CLOUD_INIT_PATH)      [[ -z "$CLOUD_INIT_PATH" ]] && CLOUD_INIT_PATH="$value" ;;
                 ARCH)                 [[ -z "$ARCH" ]] && ARCH="$value" ;;
                 AVAILABILITY_DOMAIN)  [[ -z "$AVAILABILITY_DOMAIN" ]] && AVAILABILITY_DOMAIN="$value" ;;
@@ -1248,6 +1250,23 @@ step_user_config() {
         CLOUDPANEL_ADMIN_EMAIL=$(prompt_input "CloudPanel admin email" "admin@example.com")
     fi
 
+    if [[ "$INSTALL_CLOUDPANEL" == "true" ]]; then
+        print_info "CloudPanel database engine (per cloudpanel.io docs):"
+        local db_idx
+        db_idx=$(prompt_selection "Choose database engine:" \
+            "MySQL 8.4 (Recommended)" \
+            "MySQL 8.0" \
+            "MariaDB 11.4" \
+            "MariaDB 10.11")
+        case "$db_idx" in
+            0) CLOUDPANEL_DB_ENGINE="MYSQL_8.4" ;;
+            1) CLOUDPANEL_DB_ENGINE="MYSQL_8.0" ;;
+            2) CLOUDPANEL_DB_ENGINE="MARIADB_11.4" ;;
+            3) CLOUDPANEL_DB_ENGINE="MARIADB_10.11" ;;
+        esac
+        print_success "Database engine: $CLOUDPANEL_DB_ENGINE"
+    fi
+
     # Save config to local file for future runs
     if ! $NON_INTERACTIVE; then
         if confirm "Save these settings to $INSTANCE_CONFIG_FILE for future runs?"; then
@@ -1264,6 +1283,8 @@ NEW_USERNAME=${NEW_USERNAME}
 NEW_PASSWORD=${NEW_PASSWORD}
 INSTALL_CLOUDPANEL=${INSTALL_CLOUDPANEL}
 CLOUDPANEL_ADMIN_EMAIL=${CLOUDPANEL_ADMIN_EMAIL}
+CLOUDPANEL_DB_ENGINE=${CLOUDPANEL_DB_ENGINE}
+OCI_PROFILE=${OCI_PROFILE}
 AVAILABILITY_DOMAIN=${AVAILABILITY_DOMAIN}
 BOOT_VOLUME_SIZE_GB=${BOOT_VOLUME_SIZE_GB}
 ARCH=${ARCH}
@@ -1352,11 +1373,12 @@ step_cloud_init() {
         ssh_pub_key=$(cat "$SSH_PUBLIC_KEY_PATH")
 
         # Variable substitution
+        local db_engine="${CLOUDPANEL_DB_ENGINE:-MYSQL_8.4}"
         sed \
             -e "s|__NEW_USERNAME__|${NEW_USERNAME}|g" \
             -e "s|__NEW_PASSWORD_HASH__|${password_hash}|g" \
             -e "s|__SSH_PUBLIC_KEY__|${ssh_pub_key}|g" \
-            -e "s|__CLOUDPANEL_DB_PASS__|$(openssl rand -base64 24)|g" \
+            -e "s|__CLOUDPANEL_DB_ENGINE__|${db_engine}|g" \
             "$CLOUD_INIT_PATH" > "$prepared_file"
 
         CLOUD_INIT_PREPARED="$prepared_file"
