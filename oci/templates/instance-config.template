@@ -8,6 +8,9 @@
 
 # --- OCI Resource IDs ---
 
+# OCI profile to use from ~/.oci/config (default: DEFAULT)
+# OCI_PROFILE=DEFAULT
+
 # Compartment OCID where your instances live
 # (OCI Console → Identity → Compartments → select compartment → OCID)
 COMPARTMENT_OCID=ocid1.compartment.oc1..YOUR_COMPARTMENT_OCID_HERE

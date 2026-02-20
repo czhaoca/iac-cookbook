@@ -1,23 +1,35 @@
-[DEFAULT]
 # ============================================================================
-# OCI API Configuration
+# OCI API Configuration — Multi-Profile Template
 # ============================================================================
-# Copy this file to: oci/local/config/oci-config
-# Fill in your values from the OCI Console.
+# Standard location: ~/.oci/config
 # See oci/docs/setup-api-key.md for step-by-step instructions.
+#
+# The reprovision script can create this automatically — just run:
+#   ./oci/scripts/reprovision-vm.sh
 # ============================================================================
 
-# Your user OCID (OCI Console → Profile → My Profile → OCID)
+[DEFAULT]
+# Your user OCID (Profile icon → User Settings → OCID → Copy)
 user=ocid1.user.oc1..YOUR_USER_OCID_HERE
 
-# API key fingerprint (shown when you upload the public key in OCI Console)
+# API key fingerprint (shown when you upload the public key)
 fingerprint=aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99
 
-# Your tenancy OCID (OCI Console → Profile → Tenancy → OCID)
+# Your tenancy OCID (Profile icon → Tenancy: <name> → OCID → Copy)
 tenancy=ocid1.tenancy.oc1..YOUR_TENANCY_OCID_HERE
 
-# Your home region (e.g., us-ashburn-1, us-phoenix-1, eu-frankfurt-1)
+# Your home region (e.g., us-ashburn-1, ca-toronto-1, eu-frankfurt-1)
 region=us-ashburn-1
 
-# Path to your API private key (relative to repo root or absolute)
-key_file=oci/local/api-keys/oci_api_key.pem
+# Path to your API private key
+key_file=~/.oci/keys/DEFAULT/oci_api_key.pem
+
+# --- Add more profiles below ---
+# Named profiles inherit any values not set from [DEFAULT].
+
+# [PROD]
+# user=ocid1.user.oc1..PROD_USER_OCID
+# fingerprint=11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00
+# tenancy=ocid1.tenancy.oc1..PROD_TENANCY_OCID
+# region=ca-toronto-1
+# key_file=~/.oci/keys/PROD/oci_api_key.pem

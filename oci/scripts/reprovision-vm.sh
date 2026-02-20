@@ -20,7 +20,8 @@ set -euo pipefail
 # --- Constants & Defaults ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DEFAULT_OCI_CONFIG="$REPO_ROOT/oci/local/config/oci-config"
+OCI_CONFIG_DIR="$HOME/.oci"
+OCI_CONFIG_FILE="$HOME/.oci/config"
 DEFAULT_INSTANCE_CONFIG="$REPO_ROOT/oci/local/config/instance-config"
 DEFAULT_SSH_DIR="$REPO_ROOT/oci/local/ssh"
 DEFAULT_LOG_DIR="$REPO_ROOT/oci/local/logs"
@@ -30,7 +31,7 @@ LOG_FILE=""
 # --- Script State ---
 DRY_RUN=false
 NON_INTERACTIVE=false
-OCI_CONFIG=""
+OCI_PROFILE="DEFAULT"
 INSTANCE_CONFIG_FILE=""
 COMPARTMENT_OCID=""
 INSTANCE_OCID=""
@@ -167,7 +168,7 @@ prompt_selection() {
 }
 
 oci_cmd() {
-    oci --config-file "$OCI_CONFIG" "$@"
+    oci --profile "$OCI_PROFILE" "$@"
 }
 
 # ============================================================================
@@ -182,7 +183,7 @@ USAGE:
     reprovision-vm.sh [OPTIONS]
 
 OPTIONS:
-    --config <path>           OCI config file (default: oci/local/config/oci-config)
+    --profile <name>          OCI config profile (default: DEFAULT)
     --instance-config <path>  Instance config file (default: oci/local/config/instance-config)
     --instance-id <ocid>      Instance OCID (skip selection)
     --image-id <ocid>         Ubuntu image OCID (skip selection)
@@ -197,15 +198,28 @@ INTERACTIVE MODE (default):
     Run without flags for a guided, step-by-step experience.
     The script explains each step and lets you make choices.
 
+PROFILES:
+    OCI CLI supports multiple profiles in ~/.oci/config:
+      [DEFAULT]     — default profile
+      [PROD]        — named profile for production
+      [DEV]         — named profile for development
+
+    The script scans ~/.oci/config on startup and lets you choose
+    a profile or add a new one interactively.
+
 EXAMPLES:
     # Interactive (recommended for first use)
     ./reprovision-vm.sh
+
+    # Use specific profile
+    ./reprovision-vm.sh --profile PROD
 
     # Dry run
     ./reprovision-vm.sh --dry-run
 
     # Fully parameterized
     ./reprovision-vm.sh \
+      --profile PROD \
       --instance-id ocid1.instance.oc1... \
       --image-id ocid1.image.oc1... \
       --ssh-key oci/local/ssh/my_key.pub \
@@ -214,11 +228,12 @@ EXAMPLES:
 PREREQUISITES:
     - OCI CLI installed:  oci --version
     - jq installed:       jq --version
-    - OCI config file:    oci/local/config/oci-config
+    - OCI config:         ~/.oci/config
       (see: oci/docs/setup-api-key.md)
 
 FILES:
-    oci/local/config/oci-config          OCI API configuration
+    ~/.oci/config                        OCI API profiles (multi-profile)
+    ~/.oci/keys/<profile>/               API keys per profile
     oci/local/config/instance-config     Instance & user configuration
     oci/local/ssh/                       SSH keys
     oci/local/logs/                      Operation logs
@@ -233,7 +248,8 @@ EOF
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --config) OCI_CONFIG="$2"; shift 2 ;;
+            --profile) OCI_PROFILE="$2"; shift 2 ;;
+            --profile) OCI_PROFILE="$2"; shift 2 ;;
             --instance-config) INSTANCE_CONFIG_FILE="$2"; shift 2 ;;
             --instance-id) INSTANCE_OCID="$2"; shift 2 ;;
             --image-id) IMAGE_OCID="$2"; shift 2 ;;
@@ -261,7 +277,6 @@ init() {
     fi
 
     # Set defaults
-    [[ -z "$OCI_CONFIG" ]] && OCI_CONFIG="$DEFAULT_OCI_CONFIG"
     [[ -z "$INSTANCE_CONFIG_FILE" ]] && INSTANCE_CONFIG_FILE="$DEFAULT_INSTANCE_CONFIG"
 
     # Create log directory
@@ -289,6 +304,7 @@ init() {
             value=$(echo "$value" | xargs)
             [[ -z "$key" || "$key" == \#* ]] && continue
             case "$key" in
+                OCI_PROFILE)          [[ "$OCI_PROFILE" == "DEFAULT" ]] && OCI_PROFILE="$value" ;;
                 COMPARTMENT_OCID)     [[ -z "$COMPARTMENT_OCID" ]] && COMPARTMENT_OCID="$value" ;;
                 INSTANCE_OCID)        [[ -z "$INSTANCE_OCID" ]] && INSTANCE_OCID="$value" ;;
                 SSH_PUBLIC_KEY_PATH)   [[ -z "$SSH_PUBLIC_KEY_PATH" ]] && SSH_PUBLIC_KEY_PATH="$value" ;;
@@ -312,18 +328,213 @@ init() {
 }
 
 # ============================================================================
-# Step 1: Verify OCI API Configuration
+# OCI Profile Management — Multi-profile support via ~/.oci/config
+# ============================================================================
+# OCI CLI uses INI-style config with [PROFILE] sections.
+# Standard location: ~/.oci/config
+# Keys stored in: ~/.oci/keys/<profile_name>/
+# Usage: oci --profile <PROFILE_NAME> <command>
 # ============================================================================
 
-# --- Auth Method A: Browser-based bootstrap (easiest) ---
-setup_oci_bootstrap() {
+# Parse all profile names from ~/.oci/config
+list_oci_profiles() {
+    if [[ ! -f "$OCI_CONFIG_FILE" ]]; then
+        return
+    fi
+    grep -E '^\[' "$OCI_CONFIG_FILE" | sed 's/\[//;s/\]//' | sort
+}
+
+# Get a config value for a specific profile from ~/.oci/config
+get_profile_value() {
+    local profile="$1" key="$2"
+    if [[ ! -f "$OCI_CONFIG_FILE" ]]; then
+        return
+    fi
+    # Use awk to find the value within the profile section
+    awk -v profile="[$profile]" -v key="$key" '
+        $0 == profile { found=1; next }
+        /^\[/ { found=0 }
+        found && $0 ~ "^"key"[[:space:]]*=" {
+            sub(/^[^=]*=[[:space:]]*/, ""); print; exit
+        }
+    ' "$OCI_CONFIG_FILE"
+}
+
+# Test if a profile can connect to OCI
+test_profile_connectivity() {
+    local profile="$1"
+    oci --profile "$profile" iam region list --output json 2>/dev/null | jq -r '.data[0].name' 2>/dev/null
+}
+
+# Append a new profile section to ~/.oci/config
+append_profile_to_config() {
+    local profile="$1" user="$2" fingerprint="$3" tenancy="$4" region="$5" key_file="$6"
+
+    # Ensure config file exists
+    mkdir -p "$OCI_CONFIG_DIR"
+    touch "$OCI_CONFIG_FILE"
+    chmod 600 "$OCI_CONFIG_FILE"
+
+    # Add a blank line separator if file is not empty
+    if [[ -s "$OCI_CONFIG_FILE" ]]; then
+        echo "" >> "$OCI_CONFIG_FILE"
+    fi
+
+    cat >> "$OCI_CONFIG_FILE" <<EOF
+[${profile}]
+user=${user}
+fingerprint=${fingerprint}
+tenancy=${tenancy}
+region=${region}
+key_file=${key_file}
+EOF
+    log_quiet "Profile [$profile] added to $OCI_CONFIG_FILE"
+}
+
+# --- Step 1a: Select or Create OCI Profile ---
+step_select_profile() {
+    print_header "Step 1: OCI Profile Selection"
+
+    print_info "OCI CLI supports multiple profiles in ~/.oci/config."
+    print_info "Each profile can connect to a different tenancy, region, or user."
+    print_info "Config location: ${CYAN}${OCI_CONFIG_FILE}${NC}"
+    echo ""
+
+    # Check if config file exists
+    if [[ ! -f "$OCI_CONFIG_FILE" ]]; then
+        print_warning "No OCI config found at: $OCI_CONFIG_FILE"
+        print_info "Let's set up your first OCI profile."
+        echo ""
+        setup_new_profile "DEFAULT"
+        OCI_PROFILE="DEFAULT"
+        return
+    fi
+
+    # List existing profiles
+    local profiles=()
+    while IFS= read -r p; do
+        profiles+=("$p")
+    done < <(list_oci_profiles)
+
+    if [[ ${#profiles[@]} -eq 0 ]]; then
+        print_warning "Config file exists but contains no profiles."
+        print_info "Let's set up your first OCI profile."
+        echo ""
+        setup_new_profile "DEFAULT"
+        OCI_PROFILE="DEFAULT"
+        return
+    fi
+
+    # If --profile was provided via CLI, validate and use it
+    if [[ "$OCI_PROFILE" != "DEFAULT" ]]; then
+        local found=false
+        for p in "${profiles[@]}"; do
+            if [[ "$p" == "$OCI_PROFILE" ]]; then
+                found=true
+                break
+            fi
+        done
+        if $found; then
+            print_success "Using profile from CLI flag: $OCI_PROFILE"
+            return
+        else
+            print_warning "Profile '$OCI_PROFILE' not found in config."
+            print_info "Available profiles: ${profiles[*]}"
+            echo ""
+        fi
+    fi
+
+    # Build selection list with profile details
+    local profile_labels=()
+    local profile_status=()
+
+    for p in "${profiles[@]}"; do
+        local region tenancy_ocid label
+        region=$(get_profile_value "$p" "region")
+        tenancy_ocid=$(get_profile_value "$p" "tenancy")
+        local tenancy_short=""
+        if [[ -n "$tenancy_ocid" ]]; then
+            tenancy_short="...${tenancy_ocid: -12}"
+        fi
+        label="[$p]"
+        [[ -n "$region" ]] && label="$label  region: $region"
+        [[ -n "$tenancy_short" ]] && label="$label  tenancy: $tenancy_short"
+        profile_labels+=("$label")
+    done
+    profile_labels+=("➕ Add a new profile")
+
+    print_info "Found ${#profiles[@]} profile(s) in ~/.oci/config:"
+    echo ""
+
+    local idx
+    idx=$(prompt_selection "Choose an OCI profile to use:" "${profile_labels[@]}")
+
+    if [[ $idx -lt ${#profiles[@]} ]]; then
+        OCI_PROFILE="${profiles[$idx]}"
+        print_success "Selected profile: $OCI_PROFILE"
+    else
+        # Add new profile
+        echo ""
+        print_info "Let's set up a new OCI profile."
+        echo ""
+
+        # Suggest a profile name
+        local default_name="PROFILE_$(( ${#profiles[@]} + 1 ))"
+        print_info "Profile names are typically uppercase: DEFAULT, PROD, DEV, etc."
+        local profile_name
+        profile_name=$(prompt_input "Profile name" "$default_name")
+        profile_name=$(echo "$profile_name" | tr '[:lower:]' '[:upper:]' | tr ' -' '_')
+
+        # Check for duplicates
+        for p in "${profiles[@]}"; do
+            if [[ "$p" == "$profile_name" ]]; then
+                print_warning "Profile '$profile_name' already exists. Choose a different name."
+                profile_name=$(prompt_input "Profile name")
+                profile_name=$(echo "$profile_name" | tr '[:lower:]' '[:upper:]' | tr ' -' '_')
+                break
+            fi
+        done
+
+        setup_new_profile "$profile_name"
+        OCI_PROFILE="$profile_name"
+    fi
+
+    log_quiet "OCI profile selected: $OCI_PROFILE"
+}
+
+# --- Setup a new profile interactively ---
+setup_new_profile() {
+    local profile_name="$1"
+    print_step "Setting up profile: [$profile_name]"
+    echo ""
+
+    print_info "Choose how you'd like to authenticate with OCI:"
+    echo ""
+
+    local method
+    method=$(prompt_selection "Choose an authentication method:" \
+        "Browser login (easiest — opens browser, auto-configures)" \
+        "Interactive CLI setup (step-by-step — paste OCIDs, generate key)" \
+        "Use existing credentials (already have OCIDs and key file)")
+
+    echo ""
+    case "$method" in
+        0) setup_profile_bootstrap "$profile_name" ;;
+        1) setup_profile_interactive "$profile_name" ;;
+        2) setup_profile_existing "$profile_name" ;;
+    esac
+}
+
+# --- Auth Method A: Browser-based bootstrap ---
+setup_profile_bootstrap() {
+    local profile_name="$1"
     print_step "Browser-Based Setup (oci setup bootstrap)"
     echo ""
     print_info "This will open a browser window for you to log into OCI."
     print_info "The CLI will automatically:"
     print_detail "• Generate an API signing key pair"
     print_detail "• Upload the public key to your OCI account"
-    print_detail "• Create the config file"
+    print_detail "• Create the config profile"
     echo ""
     print_info "Requirements:"
     print_detail "• A web browser accessible from this machine"
@@ -331,27 +542,26 @@ setup_oci_bootstrap() {
     echo ""
 
     if ! confirm "Ready to open the browser login?"; then
-        return 1
+        die "Setup cancelled."
     fi
 
-    mkdir -p "$REPO_ROOT/oci/local/config"
+    mkdir -p "$OCI_CONFIG_DIR"
 
-    # Run oci setup bootstrap with our config location
-    if oci setup bootstrap --config-location "$OCI_CONFIG"; then
-        print_success "OCI bootstrap complete! Config saved to: $OCI_CONFIG"
-        log_quiet "OCI config created via bootstrap at $OCI_CONFIG"
-        return 0
+    if oci setup bootstrap --config-location "$OCI_CONFIG_FILE" --profile-name "$profile_name" 2>/dev/null; then
+        print_success "OCI bootstrap complete! Profile [$profile_name] saved."
+        log_quiet "Profile [$profile_name] created via bootstrap"
     else
-        print_error "Bootstrap failed. You can try another method."
-        return 1
+        # bootstrap may not support --profile-name in all versions, fall back to interactive
+        print_warning "Browser bootstrap didn't work. Falling back to interactive setup."
+        setup_profile_interactive "$profile_name"
     fi
 }
 
-# --- Auth Method B: Interactive CLI setup (oci setup config) ---
-setup_oci_interactive_cli() {
-    print_step "Interactive CLI Setup (oci setup config)"
+# --- Auth Method B: Interactive CLI setup ---
+setup_profile_interactive() {
+    local profile_name="$1"
+    print_step "Interactive CLI Setup for profile [$profile_name]"
     echo ""
-    print_info "This walks you through creating a config file step by step."
     print_info "You'll need to provide your OCIDs — here's where to find them:"
     echo ""
     echo -e "${BOLD}  ┌─────────────────────────────────────────────────────────────────┐${NC}"
@@ -387,8 +597,9 @@ setup_oci_interactive_cli() {
         read -r -p "$(echo -e "${BOLD}  Press Enter when you're ready to continue...${NC}")"
     fi
 
-    mkdir -p "$REPO_ROOT/oci/local/config"
-    mkdir -p "$REPO_ROOT/oci/local/api-keys"
+    # Key directory for this profile
+    local profile_key_dir="$OCI_CONFIG_DIR/keys/${profile_name}"
+    mkdir -p "$profile_key_dir"
 
     echo ""
     print_step "Let's configure your OCI access step by step."
@@ -424,7 +635,7 @@ setup_oci_interactive_cli() {
     print_info "${CYAN}Step 3 of 4: Region${NC}"
     print_detail "Your home region — shown in the OCI Console top bar."
     print_detail "Common regions: us-ashburn-1, us-phoenix-1, us-sanjose-1,"
-    print_detail "                eu-frankfurt-1, ap-tokyo-1, uk-london-1"
+    print_detail "                eu-frankfurt-1, ap-tokyo-1, uk-london-1, ca-toronto-1"
     local region
     region=$(prompt_input "Enter your region" "us-ashburn-1")
     print_success "Region: $region"
@@ -436,64 +647,49 @@ setup_oci_interactive_cli() {
     print_detail "We need a private key on this machine and the matching"
     print_detail "public key uploaded to your OCI user profile."
     print_detail ""
-    print_detail "The key will be generated in ~/.ssh/ and copied to"
-    print_detail "the repo's local directory (gitignored) for this project."
+    print_detail "Keys are stored in: ~/.oci/keys/${profile_name}/"
     echo ""
 
     local default_key_name="oci_api_$(date +%Y%m%d)"
-    local key_name
-    local key_action
+    local key_name key_action
 
-    if [[ -f "$REPO_ROOT/oci/local/api-keys/"*.pem ]] 2>/dev/null; then
-        local existing_keys
-        existing_keys=$(ls "$REPO_ROOT/oci/local/api-keys/"*.pem 2>/dev/null | grep -v '_public' | head -5)
-        if [[ -n "$existing_keys" ]]; then
-            print_info "Existing API key(s) found in repo local:"
-            echo "$existing_keys" | while read -r f; do print_detail "  $f"; done
-            echo ""
-        fi
+    # Check for existing keys in the profile dir
+    if ls "$profile_key_dir"/*.pem 2>/dev/null | grep -v '_public' | head -1 >/dev/null 2>&1; then
+        print_info "Existing API key(s) found in $profile_key_dir:"
+        ls "$profile_key_dir"/*.pem 2>/dev/null | grep -v '_public' | while read -r f; do print_detail "  $f"; done
+        echo ""
     fi
 
     key_action=$(prompt_selection "How would you like to set up the API key?" \
-        "Generate a new key in ~/.ssh/ and copy to repo (Recommended)" \
+        "Generate a new key (Recommended)" \
         "I already have a key — let me provide the path")
 
     local key_path pub_path fingerprint=""
 
     case "$key_action" in
         0)
-            # Generate in ~/.ssh with dated name
+            # Generate in profile key directory
             key_name=$(prompt_input "Key name" "$default_key_name")
-            local ssh_key_path="$HOME/.ssh/${key_name}.pem"
-            local ssh_pub_path="$HOME/.ssh/${key_name}_public.pem"
+            key_path="${profile_key_dir}/${key_name}.pem"
+            pub_path="${profile_key_dir}/${key_name}_public.pem"
 
-            mkdir -p "$HOME/.ssh"
-            if [[ -f "$ssh_key_path" ]]; then
-                print_warning "Key already exists at: $ssh_key_path"
+            if [[ -f "$key_path" ]]; then
+                print_warning "Key already exists at: $key_path"
                 if ! confirm "Overwrite it?"; then
                     print_info "Using existing key."
                 else
-                    openssl genrsa -out "$ssh_key_path" 2048 2>/dev/null
-                    chmod 600 "$ssh_key_path"
-                    openssl rsa -pubout -in "$ssh_key_path" -out "$ssh_pub_path" 2>/dev/null
-                    print_success "New key generated at: $ssh_key_path"
+                    openssl genrsa -out "$key_path" 2048 2>/dev/null
+                    chmod 600 "$key_path"
+                    openssl rsa -pubout -in "$key_path" -out "$pub_path" 2>/dev/null
+                    print_success "New key generated at: $key_path"
                 fi
             else
-                openssl genrsa -out "$ssh_key_path" 2048 2>/dev/null
-                chmod 600 "$ssh_key_path"
-                openssl rsa -pubout -in "$ssh_key_path" -out "$ssh_pub_path" 2>/dev/null
-                print_success "Key generated at: $ssh_key_path"
+                openssl genrsa -out "$key_path" 2048 2>/dev/null
+                chmod 600 "$key_path"
+                openssl rsa -pubout -in "$key_path" -out "$pub_path" 2>/dev/null
+                print_success "Key generated at: $key_path"
             fi
 
-            # Copy to repo local
-            mkdir -p "$REPO_ROOT/oci/local/api-keys"
-            cp "$ssh_key_path" "$REPO_ROOT/oci/local/api-keys/${key_name}.pem"
-            cp "$ssh_pub_path" "$REPO_ROOT/oci/local/api-keys/${key_name}_public.pem"
-            chmod 600 "$REPO_ROOT/oci/local/api-keys/${key_name}.pem"
-            print_success "Key copied to repo: oci/local/api-keys/${key_name}.pem"
-
-            key_path="$REPO_ROOT/oci/local/api-keys/${key_name}.pem"
-            pub_path="$REPO_ROOT/oci/local/api-keys/${key_name}_public.pem"
             fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
             ;;
         1)
@@ -508,17 +704,16 @@ setup_oci_interactive_cli() {
                 openssl rsa -pubout -in "$key_path" -out "$pub_path" 2>/dev/null
                 print_info "Generated public key: $pub_path"
             fi
-            # Copy to repo local
-            mkdir -p "$REPO_ROOT/oci/local/api-keys"
+            # Copy to profile key directory
             local base
             base=$(basename "$key_path")
-            cp "$key_path" "$REPO_ROOT/oci/local/api-keys/$base"
-            cp "$pub_path" "$REPO_ROOT/oci/local/api-keys/$(basename "$pub_path")"
-            chmod 600 "$REPO_ROOT/oci/local/api-keys/$base"
-            key_path="$REPO_ROOT/oci/local/api-keys/$base"
-            pub_path="$REPO_ROOT/oci/local/api-keys/$(basename "$pub_path")"
+            cp "$key_path" "$profile_key_dir/$base"
+            cp "$pub_path" "$profile_key_dir/$(basename "$pub_path")"
+            chmod 600 "$profile_key_dir/$base"
+            key_path="$profile_key_dir/$base"
+            pub_path="$profile_key_dir/$(basename "$pub_path")"
             fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
-            print_success "Using key: $key_path"
+            print_success "Key copied to: $profile_key_dir/"
             ;;
     esac
 
@@ -552,196 +747,99 @@ setup_oci_interactive_cli() {
     echo -e "${NC}"
 
     if ! $NON_INTERACTIVE; then
-        read -r -p "$(echo -e "${BOLD}  Press Enter after you've uploaded the key to OCI Console...${NC}")"
+        read -r -p "$(echo -e "${BOLD}  Press Enter after you've uploaded the key to OCI Console...${NC}")" </dev/tty
     fi
 
-    # Write config file
-    cat > "$OCI_CONFIG" <<EOF
-[DEFAULT]
-user=${user_ocid}
-fingerprint=${fingerprint}
-tenancy=${tenancy_ocid}
-region=${region}
-key_file=${key_path}
-EOF
-    chmod 600 "$OCI_CONFIG"
-    print_success "OCI config saved to: $OCI_CONFIG"
-    log_quiet "OCI config created at $OCI_CONFIG (interactive CLI method)"
+    # Write profile to ~/.oci/config
+    append_profile_to_config "$profile_name" "$user_ocid" "$fingerprint" "$tenancy_ocid" "$region" "$key_path"
+    print_success "Profile [$profile_name] saved to: $OCI_CONFIG_FILE"
 }
 
-# --- Auth Method C: Use existing config ---
-setup_oci_existing_config() {
-    print_step "Use Existing OCI Configuration"
+# --- Auth Method C: Use existing credentials ---
+setup_profile_existing() {
+    local profile_name="$1"
+    print_step "Use Existing Credentials for profile [$profile_name]"
     echo ""
 
-    # Check common locations
-    local found_configs=()
-    local found_labels=()
+    print_info "You'll need: User OCID, Tenancy OCID, Region, and key file path."
+    echo ""
 
-    if [[ -f "$HOME/.oci/config" ]]; then
-        found_configs+=("$HOME/.oci/config")
-        found_labels+=("~/.oci/config (standard OCI CLI location)")
-    fi
+    local user_ocid tenancy_ocid region key_path fingerprint
 
-    # Check for any profile configs
-    if [[ -d "$HOME/.oci" ]]; then
-        while IFS= read -r f; do
-            if [[ "$f" != "$HOME/.oci/config" && -f "$f" ]]; then
-                found_configs+=("$f")
-                found_labels+=("$f")
-            fi
-        done < <(find "$HOME/.oci" -name "config*" -type f 2>/dev/null)
-    fi
-
-    found_labels+=("Enter a custom path")
-
-    if [[ ${#found_configs[@]} -gt 0 ]]; then
-        print_info "Found existing OCI configurations:"
-        local idx
-        idx=$(prompt_selection "Choose a config to use:" "${found_labels[@]}")
-
-        if [[ $idx -lt ${#found_configs[@]} ]]; then
-            local src="${found_configs[$idx]}"
-            mkdir -p "$(dirname "$OCI_CONFIG")"
-            cp "$src" "$OCI_CONFIG"
-            chmod 600 "$OCI_CONFIG"
-            print_success "Copied $src → $OCI_CONFIG"
-            # Verify key_file path is accessible
-            local key_file
-            key_file=$(grep '^key_file=' "$OCI_CONFIG" | cut -d= -f2 | xargs)
-            if [[ -n "$key_file" && ! -f "$key_file" ]]; then
-                # Try expanding ~ or relative paths
-                local expanded="${key_file/#\~/$HOME}"
-                if [[ -f "$expanded" ]]; then
-                    sed -i "s|^key_file=.*|key_file=${expanded}|" "$OCI_CONFIG"
-                    print_info "Updated key_file path to: $expanded"
-                else
-                    print_warning "API key not found at: $key_file"
-                    print_info "You may need to update the key_file path in: $OCI_CONFIG"
-                fi
-            fi
-            return 0
-        fi
-    fi
-
-    # Custom path
-    local custom_path
-    custom_path=$(prompt_input "Enter path to your OCI config file")
-    while [[ ! -f "$custom_path" ]]; do
-        print_warning "File not found: $custom_path"
-        custom_path=$(prompt_input "Enter path to your OCI config file")
+    tenancy_ocid=$(prompt_input "Tenancy OCID")
+    while [[ ! "$tenancy_ocid" =~ ^ocid1\.tenancy\. ]]; do
+        print_warning "Should start with 'ocid1.tenancy.'"
+        tenancy_ocid=$(prompt_input "Tenancy OCID")
     done
-    mkdir -p "$(dirname "$OCI_CONFIG")"
-    cp "$custom_path" "$OCI_CONFIG"
-    chmod 600 "$OCI_CONFIG"
-    print_success "Copied $custom_path → $OCI_CONFIG"
+
+    user_ocid=$(prompt_input "User OCID")
+    while [[ ! "$user_ocid" =~ ^ocid1\.user\. ]]; do
+        print_warning "Should start with 'ocid1.user.'"
+        user_ocid=$(prompt_input "User OCID")
+    done
+
+    region=$(prompt_input "Region" "us-ashburn-1")
+
+    key_path=$(prompt_input "Path to private key (.pem)")
+    while [[ ! -f "$key_path" ]]; do
+        print_warning "File not found: $key_path"
+        key_path=$(prompt_input "Path to private key (.pem)")
+    done
+
+    # Copy key to profile key directory
+    local profile_key_dir="$OCI_CONFIG_DIR/keys/${profile_name}"
+    mkdir -p "$profile_key_dir"
+    local base
+    base=$(basename "$key_path")
+    cp "$key_path" "$profile_key_dir/$base"
+    chmod 600 "$profile_key_dir/$base"
+    key_path="$profile_key_dir/$base"
+
+    fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
+
+    append_profile_to_config "$profile_name" "$user_ocid" "$fingerprint" "$tenancy_ocid" "$region" "$key_path"
+    print_success "Profile [$profile_name] saved to: $OCI_CONFIG_FILE"
 }
 
 # --- Main auth step ---
 step_verify_oci_config() {
-    print_header "Step 1: OCI API Configuration"
+    print_header "Step 1: OCI Profile & API Configuration"
 
-    print_info "To manage OCI resources, the CLI needs API credentials."
-    print_info "This script stores the config in: ${CYAN}${OCI_CONFIG}${NC}"
-    print_info "(This file is gitignored — your credentials stay local.)"
+    # Use step_select_profile which handles scanning, selection, and new profile creation
+    step_select_profile
+
     echo ""
-
-    # Check for existing config (repo-local or ~/.oci/config fallback)
-    if [[ ! -f "$OCI_CONFIG" ]] && [[ -f "$HOME/.oci/config" ]]; then
-        print_info "Found existing OCI config at ~/.oci/config"
-        if confirm "Copy ~/.oci/config to repo-local config?"; then
-            mkdir -p "$(dirname "$OCI_CONFIG")"
-            cp "$HOME/.oci/config" "$OCI_CONFIG"
-            chmod 600 "$OCI_CONFIG"
-            print_success "Config copied to: $OCI_CONFIG"
-        fi
-    fi
-
-    if [[ -f "$OCI_CONFIG" ]]; then
-        print_success "OCI config found at: $OCI_CONFIG"
-        print_info "Testing connectivity..."
-        echo ""
-        if oci_cmd iam region list --output table 2>/dev/null | head -5; then
-            print_success "OCI API connection successful!"
-            log_quiet "OCI API connection verified (existing config)"
+    print_step "Testing OCI API connectivity for profile [$OCI_PROFILE]..."
+    if test_profile_connectivity "$OCI_PROFILE"; then
+        print_success "OCI API connection successful!"
+        log_quiet "OCI API connection verified (profile: $OCI_PROFILE)"
+    else
+        # Retry once — key propagation can take a few seconds
+        print_warning "First attempt failed. Waiting 5 seconds for key propagation..."
+        sleep 5
+        if test_profile_connectivity "$OCI_PROFILE"; then
+            print_success "OCI API connection successful (after retry)!"
+            log_quiet "OCI API connection verified (profile: $OCI_PROFILE, retry)"
         else
-            print_warning "Connection failed with existing config."
-            if confirm "Re-configure OCI API access?"; then
-                rm -f "$OCI_CONFIG"
-                # Fall through to setup below
-            else
-                die "Cannot continue without working OCI API access."
-            fi
+            print_error "Connection failed. Common issues:"
+            print_detail "• API key not uploaded to OCI Console yet"
+            print_detail "• Fingerprint mismatch (re-generate and re-upload key)"
+            print_detail "• User/Tenancy OCID typo (verify in OCI Console)"
+            print_detail "• Region incorrect (check OCI Console top bar)"
+            echo ""
+            print_info "Your config file: $OCI_CONFIG_FILE"
+            print_info "Edit profile [$OCI_PROFILE] with: nano $OCI_CONFIG_FILE"
+            die "OCI API connection failed. Fix the config and re-run."
         fi
     fi
 
-    if [[ ! -f "$OCI_CONFIG" ]]; then
-        print_info "No OCI config found. Let's set one up."
-        print_info "Choose how you'd like to authenticate with OCI:"
-        echo ""
-
-        local method
-        method=$(prompt_selection "Choose an authentication method:" \
-            "Browser login (easiest — opens browser, auto-configures everything)" \
-            "Interactive CLI setup (step-by-step — paste OCIDs, generate/provide key)" \
-            "Use existing OCI config (copy from ~/.oci/config or custom path)")
-
-        echo ""
-        local setup_ok=false
-        case "$method" in
-            0) setup_oci_bootstrap && setup_ok=true ;;
-            1) setup_oci_interactive_cli && setup_ok=true ;;
-            2) setup_oci_existing_config && setup_ok=true ;;
-        esac
-
-        if ! $setup_ok; then
-            die "OCI configuration was not completed."
-        fi
-
-        # Test connectivity
-        echo ""
-        print_step "Testing OCI API connectivity..."
-        if oci_cmd iam region list --output table 2>/dev/null | head -5; then
-            print_success "OCI API connection successful!"
-            log_quiet "OCI API connection verified"
-        else
-            # Retry once — key propagation can take a few seconds
-            print_warning "First attempt failed. Waiting 5 seconds for key propagation..."
-            sleep 5
-            if oci_cmd iam region list --output table 2>/dev/null | head -5; then
-                print_success "OCI API connection successful (after retry)!"
-                log_quiet "OCI API connection verified (retry)"
-            else
-                print_error "Connection failed. Common issues:"
-                print_detail "• API key not uploaded to OCI Console yet"
-                print_detail "• Fingerprint mismatch (re-generate and re-upload key)"
-                print_detail "• User/Tenancy OCID typo (verify in OCI Console)"
-                print_detail "• Region incorrect (check OCI Console top bar)"
-                echo ""
-                print_info "Your config file: $OCI_CONFIG"
-                print_info "Edit it with: nano $OCI_CONFIG"
-                die "OCI API connection failed. Fix the config and re-run."
-            fi
-        fi
-
-        # Also install to ~/.oci/ for standard OCI CLI compatibility
-        if [[ "$OCI_CONFIG" != "$HOME/.oci/config" ]]; then
-            mkdir -p "$HOME/.oci"
-            cp "$OCI_CONFIG" "$HOME/.oci/config"
-            chmod 600 "$HOME/.oci/config"
-            local key_path
-            key_path=$(grep '^key_file=' "$OCI_CONFIG" | cut -d= -f2 | xargs)
-            if [[ -f "$key_path" ]] && [[ ! -f "$HOME/.oci/$(basename "$key_path")" ]]; then
-                cp "$key_path" "$HOME/.oci/"
-                chmod 600 "$HOME/.oci/$(basename "$key_path")"
-            fi
-            print_info "Config also installed to ~/.oci/config for standard OCI CLI use."
-        fi
-    fi
-
-    # Get tenancy for later use
+    # Get tenancy for later use via profile
     local tenancy_ocid
-    tenancy_ocid=$(grep '^tenancy=' "$OCI_CONFIG" | cut -d= -f2 | xargs)
+    tenancy_ocid=$(get_profile_value "$OCI_PROFILE" "tenancy")
+
+    if [[ -z "$tenancy_ocid" ]]; then
+        die "Could not read tenancy OCID from profile [$OCI_PROFILE] in $OCI_CONFIG_FILE"
+    fi
 
     # Get or prompt for compartment OCID
     if [[ -z "$COMPARTMENT_OCID" ]]; then
