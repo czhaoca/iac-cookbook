@@ -115,7 +115,7 @@ confirm() {
     local prompt="$1"
     if $NON_INTERACTIVE; then return 0; fi
     echo ""
-    read -r -p "$(echo -e "${BOLD}  ? ${prompt} [y/N]: ${NC}")" response
+    read -r -p "$(echo -e "${BOLD}  ? ${prompt} [y/N]: ${NC}")" response </dev/tty
     case "$response" in
         [yY][eE][sS]|[yY]) return 0 ;;
         *) return 1 ;;
@@ -127,10 +127,10 @@ prompt_input() {
     local default="${2:-}"
     local result
     if [[ -n "$default" ]]; then
-        read -r -p "$(echo -e "${BOLD}  ? ${prompt} [${default}]: ${NC}")" result
+        read -r -p "$(echo -e "${BOLD}  ? ${prompt} [${default}]: ${NC}")" result </dev/tty
         echo "${result:-$default}"
     else
-        read -r -p "$(echo -e "${BOLD}  ? ${prompt}: ${NC}")" result
+        read -r -p "$(echo -e "${BOLD}  ? ${prompt}: ${NC}")" result </dev/tty
         echo "$result"
     fi
 }
@@ -138,8 +138,8 @@ prompt_input() {
 prompt_password() {
     local prompt="$1"
     local result
-    read -r -s -p "$(echo -e "${BOLD}  ? ${prompt}: ${NC}")" result
-    echo ""
+    read -r -s -p "$(echo -e "${BOLD}  ? ${prompt}: ${NC}")" result </dev/tty
+    echo "" >/dev/tty
     echo "$result"
 }
 
@@ -147,21 +147,22 @@ prompt_selection() {
     local prompt="$1"
     shift
     local options=("$@")
-    echo ""
-    echo -e "${BOLD}  ${prompt}${NC}"
-    echo ""
+    # Display to /dev/tty so menu is visible even when called inside $()
+    echo "" >/dev/tty
+    echo -e "${BOLD}  ${prompt}${NC}" >/dev/tty
+    echo "" >/dev/tty
     for i in "${!options[@]}"; do
-        printf "    ${CYAN}%3d)${NC} %s\n" "$((i + 1))" "${options[$i]}"
+        printf "    ${CYAN}%3d)${NC} %s\n" "$((i + 1))" "${options[$i]}" >/dev/tty
     done
-    echo ""
+    echo "" >/dev/tty
     local selection
     while true; do
-        read -r -p "$(echo -e "${BOLD}  Enter number (1-${#options[@]}): ${NC}")" selection
+        read -r -p "$(echo -e "${BOLD}  Enter number (1-${#options[@]}): ${NC}")" selection </dev/tty
         if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#options[@]} )); then
             echo "$((selection - 1))"
             return
         fi
-        print_warning "Invalid selection. Please enter a number between 1 and ${#options[@]}."
+        echo -e "${YELLOW}  ⚠ Invalid selection. Please enter a number between 1 and ${#options[@]}.${NC}" >/dev/tty
     done
 }
 
@@ -360,7 +361,7 @@ setup_oci_interactive_cli() {
     echo -e "${BOLD}  │${NC}  ${CYAN}User OCID:${NC}                                                    ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}    1. Log in to ${YELLOW}https://cloud.oracle.com${NC}                        ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}    2. Click your ${CYAN}Profile icon${NC} (top-right corner)                 ${BOLD}│${NC}"
-    echo -e "${BOLD}  │${NC}    3. Click ${CYAN}\"My Profile\"${NC} (or \"User Settings\")                    ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}    3. Click ${CYAN}\"User Settings\"${NC}                                      ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}    4. Under your username, click ${CYAN}\"Copy\"${NC} next to OCID             ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}    → Looks like: ${YELLOW}ocid1.user.oc1..aaaaaa...${NC}                      ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}                                                                 ${BOLD}│${NC}"
@@ -409,7 +410,7 @@ setup_oci_interactive_cli() {
     # User OCID
     print_info "${CYAN}Step 2 of 4: User OCID${NC}"
     print_detail "This identifies your OCI user account."
-    print_detail "Find it: Profile icon → My Profile → Copy OCID"
+    print_detail "Find it: Profile icon → User Settings → OCID → Copy"
     local user_ocid
     user_ocid=$(prompt_input "Paste your User OCID")
     while [[ ! "$user_ocid" =~ ^ocid1\.user\. ]]; do
@@ -434,71 +435,90 @@ setup_oci_interactive_cli() {
     print_detail "OCI uses RSA key pairs for API authentication."
     print_detail "We need a private key on this machine and the matching"
     print_detail "public key uploaded to your OCI user profile."
+    print_detail ""
+    print_detail "The key will be generated in ~/.ssh/ and copied to"
+    print_detail "the repo's local directory (gitignored) for this project."
     echo ""
 
-    local key_path="$REPO_ROOT/oci/local/api-keys/oci_api_key.pem"
-    local pub_path="$REPO_ROOT/oci/local/api-keys/oci_api_key_public.pem"
-
+    local default_key_name="oci_api_$(date +%Y%m%d)"
+    local key_name
     local key_action
-    if [[ -f "$key_path" ]]; then
-        print_info "An API key already exists at: $key_path"
-        key_action=$(prompt_selection "What would you like to do?" \
-            "Use the existing key" \
-            "Generate a new key (overwrites existing)" \
-            "Use OCI CLI to generate (oci setup keys)")
-    else
-        key_action=$(prompt_selection "How would you like to set up the API key?" \
-            "Generate a new key pair automatically (Recommended)" \
-            "Use OCI CLI to generate (oci setup keys)" \
-            "I already have a key — let me provide the path")
+
+    if [[ -f "$REPO_ROOT/oci/local/api-keys/"*.pem ]] 2>/dev/null; then
+        local existing_keys
+        existing_keys=$(ls "$REPO_ROOT/oci/local/api-keys/"*.pem 2>/dev/null | grep -v '_public' | head -5)
+        if [[ -n "$existing_keys" ]]; then
+            print_info "Existing API key(s) found in repo local:"
+            echo "$existing_keys" | while read -r f; do print_detail "  $f"; done
+            echo ""
+        fi
     fi
 
-    local fingerprint=""
+    key_action=$(prompt_selection "How would you like to set up the API key?" \
+        "Generate a new key in ~/.ssh/ and copy to repo (Recommended)" \
+        "I already have a key — let me provide the path")
+
+    local key_path pub_path fingerprint=""
 
     case "$key_action" in
         0)
-            # Use existing or generate new
-            if [[ ! -f "$key_path" ]] || confirm "Generate a new key pair?"; then
-                print_step "Generating 2048-bit RSA key pair..."
-                openssl genrsa -out "$key_path" 2048 2>/dev/null
-                chmod 600 "$key_path"
-                openssl rsa -pubout -in "$key_path" -out "$pub_path" 2>/dev/null
-                print_success "Key pair generated:"
-                print_detail "Private: $key_path"
-                print_detail "Public:  $pub_path"
+            # Generate in ~/.ssh with dated name
+            key_name=$(prompt_input "Key name" "$default_key_name")
+            local ssh_key_path="$HOME/.ssh/${key_name}.pem"
+            local ssh_pub_path="$HOME/.ssh/${key_name}_public.pem"
+
+            mkdir -p "$HOME/.ssh"
+            if [[ -f "$ssh_key_path" ]]; then
+                print_warning "Key already exists at: $ssh_key_path"
+                if ! confirm "Overwrite it?"; then
+                    print_info "Using existing key."
+                else
+                    openssl genrsa -out "$ssh_key_path" 2048 2>/dev/null
+                    chmod 600 "$ssh_key_path"
+                    openssl rsa -pubout -in "$ssh_key_path" -out "$ssh_pub_path" 2>/dev/null
+                    print_success "New key generated at: $ssh_key_path"
+                fi
+            else
+                openssl genrsa -out "$ssh_key_path" 2048 2>/dev/null
+                chmod 600 "$ssh_key_path"
+                openssl rsa -pubout -in "$ssh_key_path" -out "$ssh_pub_path" 2>/dev/null
+                print_success "Key generated at: $ssh_key_path"
             fi
+
+            # Copy to repo local
+            mkdir -p "$REPO_ROOT/oci/local/api-keys"
+            cp "$ssh_key_path" "$REPO_ROOT/oci/local/api-keys/${key_name}.pem"
+            cp "$ssh_pub_path" "$REPO_ROOT/oci/local/api-keys/${key_name}_public.pem"
+            chmod 600 "$REPO_ROOT/oci/local/api-keys/${key_name}.pem"
+            print_success "Key copied to repo: oci/local/api-keys/${key_name}.pem"
+
+            key_path="$REPO_ROOT/oci/local/api-keys/${key_name}.pem"
+            pub_path="$REPO_ROOT/oci/local/api-keys/${key_name}_public.pem"
             fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
             ;;
         1)
-            # Use oci setup keys
-            print_step "Running: oci setup keys"
-            oci setup keys \
-                --output-dir "$REPO_ROOT/oci/local/api-keys" \
-                --key-name oci_api_key \
-                --overwrite
-            # oci setup keys produces oci_api_key.pem and oci_api_key_public.pem
-            key_path="$REPO_ROOT/oci/local/api-keys/oci_api_key.pem"
-            pub_path="$REPO_ROOT/oci/local/api-keys/oci_api_key_public.pem"
-            if [[ ! -f "$key_path" ]]; then
-                # oci setup keys uses _public suffix on the public key
-                pub_path="$REPO_ROOT/oci/local/api-keys/oci_api_key_public.pem"
-            fi
-            fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
-            print_success "Keys generated via OCI CLI"
-            ;;
-        2)
             # User provides path
             key_path=$(prompt_input "Path to your private key (.pem)")
             while [[ ! -f "$key_path" ]]; do
                 print_warning "File not found: $key_path"
                 key_path=$(prompt_input "Path to your private key (.pem)")
             done
-            fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
             pub_path="${key_path%.pem}_public.pem"
             if [[ ! -f "$pub_path" ]]; then
                 openssl rsa -pubout -in "$key_path" -out "$pub_path" 2>/dev/null
+                print_info "Generated public key: $pub_path"
             fi
-            print_success "Using existing key: $key_path"
+            # Copy to repo local
+            mkdir -p "$REPO_ROOT/oci/local/api-keys"
+            local base
+            base=$(basename "$key_path")
+            cp "$key_path" "$REPO_ROOT/oci/local/api-keys/$base"
+            cp "$pub_path" "$REPO_ROOT/oci/local/api-keys/$(basename "$pub_path")"
+            chmod 600 "$REPO_ROOT/oci/local/api-keys/$base"
+            key_path="$REPO_ROOT/oci/local/api-keys/$base"
+            pub_path="$REPO_ROOT/oci/local/api-keys/$(basename "$pub_path")"
+            fingerprint=$(openssl rsa -pubout -outform DER -in "$key_path" 2>/dev/null | openssl md5 -c | awk '{print $2}')
+            print_success "Using key: $key_path"
             ;;
     esac
 
@@ -513,8 +533,8 @@ setup_oci_interactive_cli() {
     echo -e "${BOLD}  ├─────────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${BOLD}  │${NC}                                                                 ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}  1. Go to ${YELLOW}https://cloud.oracle.com${NC}                              ${BOLD}│${NC}"
-    echo -e "${BOLD}  │${NC}  2. Click ${CYAN}Profile icon${NC} (top-right) → ${CYAN}\"My Profile\"${NC}               ${BOLD}│${NC}"
-    echo -e "${BOLD}  │${NC}  3. Scroll to ${CYAN}\"API Keys\"${NC} section (left sidebar or scroll)       ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  2. Click ${CYAN}Profile icon${NC} (top-right) → ${CYAN}\"User Settings\"${NC}           ${BOLD}│${NC}"
+    echo -e "${BOLD}  │${NC}  3. Go to ${CYAN}\"Tokens and keys\"${NC} (under Resources, left sidebar)     ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}  4. Click ${CYAN}\"Add API Key\"${NC}                                         ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}  5. Select ${CYAN}\"Paste a Public Key\"${NC}                                  ${BOLD}│${NC}"
     echo -e "${BOLD}  │${NC}  6. Paste the key shown below                                   ${BOLD}│${NC}"
@@ -626,6 +646,17 @@ step_verify_oci_config() {
     print_info "(This file is gitignored — your credentials stay local.)"
     echo ""
 
+    # Check for existing config (repo-local or ~/.oci/config fallback)
+    if [[ ! -f "$OCI_CONFIG" ]] && [[ -f "$HOME/.oci/config" ]]; then
+        print_info "Found existing OCI config at ~/.oci/config"
+        if confirm "Copy ~/.oci/config to repo-local config?"; then
+            mkdir -p "$(dirname "$OCI_CONFIG")"
+            cp "$HOME/.oci/config" "$OCI_CONFIG"
+            chmod 600 "$OCI_CONFIG"
+            print_success "Config copied to: $OCI_CONFIG"
+        fi
+    fi
+
     if [[ -f "$OCI_CONFIG" ]]; then
         print_success "OCI config found at: $OCI_CONFIG"
         print_info "Testing connectivity..."
@@ -674,15 +705,37 @@ step_verify_oci_config() {
             print_success "OCI API connection successful!"
             log_quiet "OCI API connection verified"
         else
-            print_error "Connection failed. Common issues:"
-            print_detail "• API key not uploaded to OCI Console yet"
-            print_detail "• Fingerprint mismatch (re-generate and re-upload key)"
-            print_detail "• User/Tenancy OCID typo (verify in OCI Console)"
-            print_detail "• Region incorrect (check OCI Console top bar)"
-            echo ""
-            print_info "Your config file: $OCI_CONFIG"
-            print_info "Edit it with: nano $OCI_CONFIG"
-            die "OCI API connection failed. Fix the config and re-run."
+            # Retry once — key propagation can take a few seconds
+            print_warning "First attempt failed. Waiting 5 seconds for key propagation..."
+            sleep 5
+            if oci_cmd iam region list --output table 2>/dev/null | head -5; then
+                print_success "OCI API connection successful (after retry)!"
+                log_quiet "OCI API connection verified (retry)"
+            else
+                print_error "Connection failed. Common issues:"
+                print_detail "• API key not uploaded to OCI Console yet"
+                print_detail "• Fingerprint mismatch (re-generate and re-upload key)"
+                print_detail "• User/Tenancy OCID typo (verify in OCI Console)"
+                print_detail "• Region incorrect (check OCI Console top bar)"
+                echo ""
+                print_info "Your config file: $OCI_CONFIG"
+                print_info "Edit it with: nano $OCI_CONFIG"
+                die "OCI API connection failed. Fix the config and re-run."
+            fi
+        fi
+
+        # Also install to ~/.oci/ for standard OCI CLI compatibility
+        if [[ "$OCI_CONFIG" != "$HOME/.oci/config" ]]; then
+            mkdir -p "$HOME/.oci"
+            cp "$OCI_CONFIG" "$HOME/.oci/config"
+            chmod 600 "$HOME/.oci/config"
+            local key_path
+            key_path=$(grep '^key_file=' "$OCI_CONFIG" | cut -d= -f2 | xargs)
+            if [[ -f "$key_path" ]] && [[ ! -f "$HOME/.oci/$(basename "$key_path")" ]]; then
+                cp "$key_path" "$HOME/.oci/"
+                chmod 600 "$HOME/.oci/$(basename "$key_path")"
+            fi
+            print_info "Config also installed to ~/.oci/config for standard OCI CLI use."
         fi
     fi
 

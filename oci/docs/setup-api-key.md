@@ -49,7 +49,7 @@ Before starting, gather these values from the [OCI Console](https://cloud.oracle
 
 | Value | Where to Find It |
 |-------|-----------------|
-| **User OCID** | Profile icon (top-right) → **My Profile** → OCID → Copy |
+| **User OCID** | Profile icon (top-right) → **User Settings** → OCID → Copy |
 | **Tenancy OCID** | Profile icon → **Tenancy: \<name\>** → OCID → Copy |
 | **Region** | Shown in the top bar (e.g., `us-ashburn-1`) |
 
@@ -89,8 +89,9 @@ Save this fingerprint — you'll need it for the config file.
 #### 4. Upload the Public Key to OCI Console
 
 1. Log in to [cloud.oracle.com](https://cloud.oracle.com/)
-2. Click **Profile icon** (top-right) → **My Profile**
-3. Scroll to **API Keys** → click **Add API Key**
+2. Click **Profile icon** (top-right) → **User Settings**
+3. Go to **Tokens and keys** (under Resources, left sidebar)
+4. Click **Add API Key**
 4. Select **Paste a Public Key**
 5. Paste the contents of the public key:
    ```bash
