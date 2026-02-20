@@ -1006,64 +1006,83 @@ step_ssh_key() {
             done < <(find "$HOME/.ssh" -name "*.pub" -print0 2>/dev/null)
         fi
 
+        # Build selection list from all found keys
+        local all_keys=()
+        local all_labels=()
+        for k in "${pub_keys[@]}"; do
+            all_keys+=("$k")
+            all_labels+=("[repo] $k")
+        done
+        for k in "${home_keys[@]}"; do
+            all_keys+=("$k")
+            all_labels+=("[home] $k")
+        done
+        all_labels+=("Generate a new SSH key")
+
         if [[ ${#pub_keys[@]} -eq 0 && ${#home_keys[@]} -eq 0 ]]; then
             print_warning "No SSH keys found in $DEFAULT_SSH_DIR or ~/.ssh/"
             echo ""
-            print_info "Let's generate a new SSH key pair for your OCI instances."
-            print_info "The key will be stored in $DEFAULT_SSH_DIR (gitignored)."
-            echo ""
+            print_info "Let's generate a new SSH key pair."
+        fi
+
+        local idx
+        idx=$(prompt_selection "Choose an SSH public key:" "${all_labels[@]}")
+
+        if [[ $idx -eq ${#all_keys[@]} ]]; then
+            # Generate new key in ~/.ssh/ with user-chosen name
+            local default_name="oci_bash_$(date +%Y%m%d)"
+            echo "" >/dev/tty
+            print_info "The key will be generated in ~/.ssh/"
+            print_info "Default name: ${CYAN}${default_name}${NC}"
+            print_info "Enter a custom name or press Enter for the default."
+            echo "" >/dev/tty
 
             local key_name
-            key_name=$(prompt_input "SSH key name" "oci_instance_key")
-            local key_path="$DEFAULT_SSH_DIR/${key_name}"
+            key_name=$(prompt_input "SSH key name" "$default_name")
+            local key_path="$HOME/.ssh/${key_name}"
 
-            ssh-keygen -t ed25519 -f "$key_path" -N "" -C "oci-instance-$(date +%Y%m%d)"
-            print_success "SSH key generated:"
-            print_detail "Private: $key_path"
-            print_detail "Public:  ${key_path}.pub"
-            SSH_PUBLIC_KEY_PATH="${key_path}.pub"
-            SSH_PRIVATE_KEY_PATH="$key_path"
-        else
-            # Combine and let user choose
-            local all_keys=()
-            local all_labels=()
-            for k in "${pub_keys[@]}"; do
-                all_keys+=("$k")
-                all_labels+=("[repo] $k")
-            done
-            for k in "${home_keys[@]}"; do
-                all_keys+=("$k")
-                all_labels+=("[home] $k")
-            done
-            all_labels+=("Generate a new SSH key")
-
-            local idx
-            idx=$(prompt_selection "Choose an SSH public key:" "${all_labels[@]}")
-
-            if [[ $idx -eq ${#all_keys[@]} ]]; then
-                # Generate new key
-                local key_name
-                key_name=$(prompt_input "SSH key name" "oci_instance_key")
-                local key_path="$DEFAULT_SSH_DIR/${key_name}"
-                ssh-keygen -t ed25519 -f "$key_path" -N "" -C "oci-instance-$(date +%Y%m%d)"
-                print_success "SSH key generated: ${key_path}.pub"
+            # Check if key already exists
+            if [[ -f "$key_path" ]]; then
+                print_warning "Key already exists: $key_path"
+                if confirm "Use existing key instead of overwriting?"; then
+                    SSH_PUBLIC_KEY_PATH="${key_path}.pub"
+                    SSH_PRIVATE_KEY_PATH="$key_path"
+                else
+                    ssh-keygen -t ed25519 -f "$key_path" -N "" -C "${key_name}" <<< "y"
+                    SSH_PUBLIC_KEY_PATH="${key_path}.pub"
+                    SSH_PRIVATE_KEY_PATH="$key_path"
+                fi
+            else
+                ssh-keygen -t ed25519 -f "$key_path" -N "" -C "${key_name}"
                 SSH_PUBLIC_KEY_PATH="${key_path}.pub"
                 SSH_PRIVATE_KEY_PATH="$key_path"
-            else
-                SSH_PUBLIC_KEY_PATH="${all_keys[$idx]}"
-                SSH_PRIVATE_KEY_PATH="${SSH_PUBLIC_KEY_PATH%.pub}"
+            fi
 
-                # If key is from ~/.ssh, offer to copy to repo local
-                if [[ "$SSH_PUBLIC_KEY_PATH" == "$HOME/.ssh/"* ]]; then
-                    if confirm "Copy this key to $DEFAULT_SSH_DIR for this project?"; then
-                        cp "$SSH_PUBLIC_KEY_PATH" "$DEFAULT_SSH_DIR/"
-                        [[ -f "$SSH_PRIVATE_KEY_PATH" ]] && cp "$SSH_PRIVATE_KEY_PATH" "$DEFAULT_SSH_DIR/"
-                        local basename
-                        basename=$(basename "$SSH_PUBLIC_KEY_PATH")
-                        SSH_PUBLIC_KEY_PATH="$DEFAULT_SSH_DIR/$basename"
-                        SSH_PRIVATE_KEY_PATH="${SSH_PUBLIC_KEY_PATH%.pub}"
-                        print_success "Key copied to: $DEFAULT_SSH_DIR/"
-                    fi
+            print_success "SSH key ready:"
+            print_detail "Private: $SSH_PRIVATE_KEY_PATH"
+            print_detail "Public:  $SSH_PUBLIC_KEY_PATH"
+
+            # Copy to repo-local ssh dir
+            mkdir -p "$DEFAULT_SSH_DIR"
+            cp "$SSH_PUBLIC_KEY_PATH" "$DEFAULT_SSH_DIR/"
+            cp "$SSH_PRIVATE_KEY_PATH" "$DEFAULT_SSH_DIR/"
+            chmod 600 "$DEFAULT_SSH_DIR/$(basename "$SSH_PRIVATE_KEY_PATH")"
+            print_info "Key also copied to: $DEFAULT_SSH_DIR/ (gitignored)"
+        else
+            SSH_PUBLIC_KEY_PATH="${all_keys[$idx]}"
+            SSH_PRIVATE_KEY_PATH="${SSH_PUBLIC_KEY_PATH%.pub}"
+
+            # If key is from ~/.ssh, offer to copy to repo local
+            if [[ "$SSH_PUBLIC_KEY_PATH" == "$HOME/.ssh/"* ]]; then
+                if confirm "Copy this key to $DEFAULT_SSH_DIR for this project?"; then
+                    mkdir -p "$DEFAULT_SSH_DIR"
+                    cp "$SSH_PUBLIC_KEY_PATH" "$DEFAULT_SSH_DIR/"
+                    [[ -f "$SSH_PRIVATE_KEY_PATH" ]] && cp "$SSH_PRIVATE_KEY_PATH" "$DEFAULT_SSH_DIR/"
+                    local basename
+                    basename=$(basename "$SSH_PUBLIC_KEY_PATH")
+                    SSH_PUBLIC_KEY_PATH="$DEFAULT_SSH_DIR/$basename"
+                    SSH_PRIVATE_KEY_PATH="${SSH_PUBLIC_KEY_PATH%.pub}"
+                    print_success "Key copied to: $DEFAULT_SSH_DIR/"
                 fi
             fi
         fi
