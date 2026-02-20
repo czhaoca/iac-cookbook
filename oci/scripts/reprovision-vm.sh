@@ -17,6 +17,24 @@
 
 set -euo pipefail
 
+# --- Error trap: show context on unexpected exit ---
+trap_handler() {
+    local exit_code=$?
+    local line_no=${1:-unknown}
+    if [[ $exit_code -ne 0 ]]; then
+        echo "" >&2
+        echo -e "\033[1;31m  ✖ Script failed at line $line_no (exit code: $exit_code)\033[0m" >&2
+        echo -e "\033[1;31m    Check the log file for details.\033[0m" >&2
+        if [[ -n "${LOG_FILE:-}" && -f "${LOG_FILE:-}" ]]; then
+            echo -e "\033[1;31m    Log: $LOG_FILE\033[0m" >&2
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] FATAL: Script failed at line $line_no (exit code: $exit_code)" >> "$LOG_FILE"
+        fi
+        echo "" >&2
+        echo -e "\033[33m  If this was a quota error, re-run the script — it can recover and resume.\033[0m" >&2
+    fi
+}
+trap 'trap_handler $LINENO' ERR
+
 # --- Constants & Defaults ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -47,6 +65,10 @@ CLOUDPANEL_ADMIN_EMAIL=""
 CLOUDPANEL_DB_ENGINE="MYSQL_8.4"
 BOOT_VOLUME_SIZE_GB=""
 AVAILABILITY_DOMAIN=""
+SKIP_BACKUP=false
+DELETE_OLD_BV=false
+backup_id=""
+new_bv_id=""
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -191,6 +213,7 @@ OPTIONS:
     --ssh-key <path>          SSH public key file path
     --cloud-init <path>       Cloud-init YAML file path
     --arch <x86|arm>          Force architecture (auto-detected if not set)
+    --skip-backup             Skip boot volume backup (saves storage quota)
     --dry-run                 Preview operations without executing
     --non-interactive         Skip prompts (requires all IDs via flags/config)
     --help                    Show this help message
@@ -257,6 +280,7 @@ parse_args() {
             --ssh-key) SSH_PUBLIC_KEY_PATH="$2"; shift 2 ;;
             --cloud-init) CLOUD_INIT_PATH="$2"; shift 2 ;;
             --arch) ARCH="$2"; shift 2 ;;
+            --skip-backup) SKIP_BACKUP=true; shift ;;
             --dry-run) DRY_RUN=true; shift ;;
             --non-interactive) NON_INTERACTIVE=true; shift ;;
             --help) show_help; exit 0 ;;
@@ -991,8 +1015,20 @@ step_select_instance() {
         --compartment-id "$COMPARTMENT_OCID" \
         --instance-id "$INSTANCE_OCID" 2>/dev/null)
 
-    CURRENT_BOOT_VOLUME_ID=$(echo "$boot_volumes" | jq -r '.data[0]["boot-volume-id"]')
-    CURRENT_BOOT_ATTACH_ID=$(echo "$boot_volumes" | jq -r '.data[0].id')
+    # Prefer ATTACHED, fall back to most recent DETACHED (recovery case)
+    local attached_bv
+    attached_bv=$(echo "$boot_volumes" | jq -r '[.data[] | select(.["lifecycle-state"] == "ATTACHED")] | .[0]')
+    if [[ "$attached_bv" != "null" && -n "$attached_bv" ]]; then
+        CURRENT_BOOT_VOLUME_ID=$(echo "$attached_bv" | jq -r '.["boot-volume-id"]')
+        CURRENT_BOOT_ATTACH_ID=$(echo "$attached_bv" | jq -r '.id')
+    else
+        # Recovery: boot volume is detached (previous failed run)
+        local detached_bv
+        detached_bv=$(echo "$boot_volumes" | jq -r '[.data[] | select(.["lifecycle-state"] == "DETACHED")] | sort_by(.["time-created"]) | last')
+        CURRENT_BOOT_VOLUME_ID=$(echo "$detached_bv" | jq -r '.["boot-volume-id"]')
+        CURRENT_BOOT_ATTACH_ID=$(echo "$detached_bv" | jq -r '.id')
+        print_warning "Boot volume is currently DETACHED (previous run may have failed)"
+    fi
     print_detail "Boot Volume: $CURRENT_BOOT_VOLUME_ID"
     log_quiet "Current boot volume: $CURRENT_BOOT_VOLUME_ID"
     log_quiet "Boot volume attachment: $CURRENT_BOOT_ATTACH_ID"
@@ -1408,13 +1444,15 @@ step_confirm() {
     print_detail "│ Boot Vol Size: ${BOOT_VOLUME_SIZE_GB} GB"
     print_detail "├─────────────────────────────────────────────────────────┤"
     print_detail "│ WORKFLOW:                                              │"
-    print_detail "│ 1. Stop instance                                      │"
-    print_detail "│ 2. Snapshot current boot volume (safety net)           │"
-    print_detail "│ 3. Detach current boot volume                         │"
-    print_detail "│ 4. Create new boot volume from Ubuntu image           │"
-    print_detail "│ 5. Attach new boot volume to instance                 │"
-    print_detail "│ 6. Start instance with cloud-init                     │"
-    print_detail "│ 7. Verify SSH connectivity                            │"
+    print_detail "│ 1. Stop instance (if running)                         │"
+    print_detail "│ 2. Replace boot volume via image (atomic OCI API)     │"
+    print_detail "│ 3. Start instance with new OS + cloud-init            │"
+    print_detail "│ 4. Verify SSH connectivity                            │"
+    if $DELETE_OLD_BV; then
+    print_detail "│ ⚠ Old boot volume will be DELETED (no rollback)       │"
+    else
+    print_detail "│ ✔ Old boot volume preserved for rollback              │"
+    fi
     print_detail "└─────────────────────────────────────────────────────────┘"
     echo ""
 
@@ -1434,6 +1472,203 @@ step_confirm() {
 # ============================================================================
 # Step 8: Execute Reprovisioning
 # ============================================================================
+
+# --- Helper: run OCI command with error capture (not silencing stderr) ---
+oci_cmd_checked() {
+    local output
+    local err_file
+    err_file=$(mktemp)
+    if output=$(oci --profile "$OCI_PROFILE" "$@" 2>"$err_file"); then
+        rm -f "$err_file"
+        echo "$output"
+        return 0
+    else
+        local rc=$?
+        local err_msg
+        err_msg=$(cat "$err_file")
+        rm -f "$err_file"
+        echo "" >&2
+        print_error "OCI CLI command failed:"
+        print_detail "  Command: oci --profile $OCI_PROFILE $*"
+        if echo "$err_msg" | grep -qi "LimitExceeded\|QuotaExceeded\|Out of host capacity\|TotalStorageExceeded"; then
+            print_error "QUOTA EXCEEDED — You've hit a free tier limit."
+            print_detail "$err_msg" | head -5
+        elif echo "$err_msg" | grep -qi "NotAuthorized\|NotAuthenticated"; then
+            print_error "AUTHENTICATION ERROR"
+            print_detail "$err_msg" | head -3
+        else
+            print_detail "$err_msg" | head -5
+        fi
+        log "OCI CLI error (rc=$rc): $err_msg"
+        return $rc
+    fi
+}
+
+# --- Pre-flight: check free tier storage quota ---
+check_storage_quota() {
+    print_step "Checking storage quota..."
+
+    local ad
+    ad=$(oci_cmd iam availability-domain list 2>/dev/null | jq -r '.data[0].name')
+
+    # Get free tier limit
+    local storage_limit
+    storage_limit=$(oci_cmd limits value list \
+        --compartment-id "$(get_profile_value "$OCI_PROFILE" "tenancy")" \
+        --service-name block-storage --all 2>/dev/null \
+        | jq -r '.data[] | select(.name == "total-free-storage-gb") | .value' | head -1)
+
+    if [[ -z "$storage_limit" || "$storage_limit" == "null" ]]; then
+        print_info "Could not determine storage quota. Proceeding anyway."
+        return 0
+    fi
+
+    # Calculate current usage: boot volumes + backups
+    local tenancy_ocid
+    tenancy_ocid=$(get_profile_value "$OCI_PROFILE" "tenancy")
+
+    local bv_usage=0
+    local bv_list
+    bv_list=$(oci_cmd bv boot-volume list \
+        --compartment-id "$tenancy_ocid" \
+        --availability-domain "$ad" 2>/dev/null || echo '{"data":[]}')
+    bv_usage=$(echo "$bv_list" | jq '[.data[] | .["size-in-gbs"] // 0] | add // 0')
+
+    local backup_usage=0
+    local backup_list
+    backup_list=$(oci_cmd bv boot-volume-backup list \
+        --compartment-id "$tenancy_ocid" 2>/dev/null || echo '{"data":[]}')
+    backup_usage=$(echo "$backup_list" | jq '[.data[] | .["size-in-gbs"] // 0] | add // 0')
+
+    local vol_usage=0
+    local vol_list
+    vol_list=$(oci_cmd bv volume list \
+        --compartment-id "$tenancy_ocid" \
+        --availability-domain "$ad" 2>/dev/null || echo '{"data":[]}')
+    vol_usage=$(echo "$vol_list" | jq '[.data[] | .["size-in-gbs"] // 0] | add // 0')
+
+    local total_used=$(( bv_usage + backup_usage + vol_usage ))
+    local available=$(( storage_limit - total_used ))
+
+    echo ""
+    print_info "┌─── Block Storage Quota ─────────────────────────────────┐"
+    print_info "│ Free tier limit:     ${storage_limit} GB"
+    print_info "│ Boot volumes:        ${bv_usage} GB"
+    print_info "│ Boot vol backups:    ${backup_usage} GB"
+    print_info "│ Block volumes:       ${vol_usage} GB"
+    print_info "│ Total used:          ${total_used} GB"
+    print_info "│ Available:           ${available} GB"
+    print_info "│ Needed for new BV:   ${BOOT_VOLUME_SIZE_GB} GB"
+    print_info "└─────────────────────────────────────────────────────────┘"
+    echo ""
+    log "Storage quota: limit=${storage_limit}GB, used=${total_used}GB, available=${available}GB, needed=${BOOT_VOLUME_SIZE_GB}GB"
+
+    # Check if we have enough space
+    if (( available >= BOOT_VOLUME_SIZE_GB )); then
+        print_success "Sufficient storage available."
+        return 0
+    fi
+
+    # Not enough space — help the user
+    # With the replace-boot-volume API, setting preserve=false avoids needing
+    # extra space because OCI replaces in-place (old BV deleted automatically).
+    print_warning "NOT ENOUGH STORAGE for a new ${BOOT_VOLUME_SIZE_GB} GB boot volume."
+    print_info "You need to free up $(( BOOT_VOLUME_SIZE_GB - available )) GB."
+    echo ""
+
+    # Offer strategies
+    local strategies=()
+    local strategy_actions=()
+
+    # Strategy 1: Don't preserve old boot volume (OCI deletes it in the replace)
+    strategies+=("Don't preserve old boot volume (OCI replaces in-place — no rollback)")
+    strategy_actions+=("delete_old_bv")
+
+    # Strategy 2: Delete existing backups
+    local backup_count
+    backup_count=$(echo "$backup_list" | jq '.data | length')
+    if (( backup_count > 0 )); then
+        strategies+=("Delete existing backup(s) (frees ${backup_usage} GB from ${backup_count} backup(s))")
+        strategy_actions+=("delete_backups")
+    fi
+
+    # Strategy 3: Abort
+    strategies+=("Abort — I'll free space manually")
+    strategy_actions+=("abort")
+
+    print_info "Choose a strategy to free storage:"
+    echo ""
+
+    local freed=0
+    while (( available + freed < BOOT_VOLUME_SIZE_GB )); do
+        local idx
+        idx=$(prompt_selection "Free up storage (still need $(( BOOT_VOLUME_SIZE_GB - available - freed )) GB more):" "${strategies[@]}")
+        local action="${strategy_actions[$idx]}"
+
+        case "$action" in
+            delete_backups)
+                print_info "Existing backups:"
+                local backup_names=()
+                local backup_ids=()
+                local backup_sizes=()
+                while IFS= read -r line; do
+                    local bname bsize bid
+                    bname=$(echo "$line" | jq -r '.["display-name"]')
+                    bsize=$(echo "$line" | jq -r '.["size-in-gbs"]')
+                    bid=$(echo "$line" | jq -r '.id')
+                    backup_names+=("$bname (${bsize} GB)")
+                    backup_ids+=("$bid")
+                    backup_sizes+=("$bsize")
+                done < <(echo "$backup_list" | jq -c '.data[]')
+
+                backup_names+=("Cancel — don't delete any")
+
+                local bidx
+                bidx=$(prompt_selection "Which backup to delete?" "${backup_names[@]}")
+                if (( bidx < ${#backup_ids[@]} )); then
+                    local del_id="${backup_ids[$bidx]}"
+                    local del_size="${backup_sizes[$bidx]}"
+                    if confirm "Delete backup '${backup_names[$bidx]}'? This cannot be undone."; then
+                        print_info "Deleting backup..."
+                        oci_cmd bv boot-volume-backup delete \
+                            --boot-volume-backup-id "$del_id" --force 2>/dev/null
+                        freed=$((freed + del_size))
+                        print_success "Deleted. Freed ${del_size} GB."
+                        log "Deleted backup $del_id (${del_size} GB)"
+                    fi
+                fi
+                ;;
+            delete_old_bv)
+                DELETE_OLD_BV=true
+                freed=$((freed + BOOT_VOLUME_SIZE_GB))
+                print_success "Will NOT preserve old boot volume — OCI replaces in-place, frees ${BOOT_VOLUME_SIZE_GB} GB"
+                print_warning "No rollback possible after replacement."
+                # Remove this option
+                local new_strategies=()
+                local new_actions=()
+                for i in "${!strategy_actions[@]}"; do
+                    if [[ "${strategy_actions[$i]}" != "delete_old_bv" ]]; then
+                        new_strategies+=("${strategies[$i]}")
+                        new_actions+=("${strategy_actions[$i]}")
+                    fi
+                done
+                strategies=("${new_strategies[@]}")
+                strategy_actions=("${new_actions[@]}")
+                ;;
+            abort)
+                print_info "Quota management tips:"
+                print_detail "• Delete unused boot volumes: oci bv boot-volume delete --boot-volume-id <OCID>"
+                print_detail "• Delete backups: oci bv boot-volume-backup delete --boot-volume-backup-id <OCID>"
+                print_detail "• Check usage: oci bv boot-volume list --compartment-id <tenancy>"
+                die "Not enough storage. Free up space and re-run."
+                ;;
+        esac
+    done
+
+    echo ""
+    print_success "Storage strategy set. Proceeding with $(( available + freed )) GB available."
+    log "Storage freed: ${freed}GB (skip_backup=$SKIP_BACKUP, delete_old_bv=$DELETE_OLD_BV)"
+}
 
 wait_for_state() {
     local resource_type="$1"  # instance, boot-volume, etc.
@@ -1488,125 +1723,191 @@ step_execute() {
     print_header "Step 8: Executing Reprovisioning"
     log "Starting reprovisioning workflow..."
 
-    # --- 8.1: Stop the instance ---
-    print_step "8.1 Stopping instance..."
+    # --- 8.0: Pre-flight quota check ---
+    check_storage_quota
+
+    # --- 8.0b: Detect recovery from previous failed run ---
+    print_step "Checking instance state..."
     local instance_state
     instance_state=$(oci_cmd compute instance get \
         --instance-id "$INSTANCE_OCID" 2>/dev/null \
         | jq -r '.data["lifecycle-state"]')
 
-    if [[ "$instance_state" == "RUNNING" ]]; then
-        oci_cmd compute instance action \
+    local current_attach_state=""
+    current_attach_state=$(oci_cmd compute boot-volume-attachment list \
+        --compartment-id "$COMPARTMENT_OCID" \
+        --availability-domain "$AVAILABILITY_DOMAIN" \
+        --instance-id "$INSTANCE_OCID" 2>/dev/null \
+        | jq -r '[.data[] | select(.["lifecycle-state"] == "ATTACHED")] | length')
+
+    if [[ "$instance_state" == "STOPPED" && "$current_attach_state" == "0" ]]; then
+        print_warning "Recovery detected: Instance is STOPPED with NO boot volume attached."
+        print_info "This looks like a previous run failed after detaching the boot volume."
+        print_info "The replace-boot-volume API requires an attached boot volume."
+        print_info "Re-attaching old boot volume first so the replace command can proceed."
+        echo ""
+
+        local recovery_action
+        recovery_action=$(prompt_selection "How would you like to proceed?" \
+            "Re-attach old BV and continue with replacement" \
+            "Re-attach old BV and abort (restore previous state)")
+
+        if [[ "$recovery_action" == "2" ]]; then
+            print_info "Re-attaching old boot volume..."
+            oci_cmd_checked compute boot-volume-attachment attach \
+                --boot-volume-id "$CURRENT_BOOT_VOLUME_ID" \
+                --instance-id "$INSTANCE_OCID" \
+                --display-name "recovery-reattach-${TIMESTAMP}" >/dev/null || true
+            sleep 15
+            print_success "Old boot volume re-attached. Starting instance..."
+            oci_cmd compute instance action \
+                --instance-id "$INSTANCE_OCID" \
+                --action START 2>/dev/null >/dev/null
+            wait_for_state "instance" "$INSTANCE_OCID" "RUNNING"
+            print_success "Instance restored to previous state."
+            exit 0
+        fi
+
+        # Re-attach old BV so the replace API works
+        print_step "8.1 Re-attaching old boot volume for replacement..."
+        oci_cmd_checked compute boot-volume-attachment attach \
+            --boot-volume-id "$CURRENT_BOOT_VOLUME_ID" \
             --instance-id "$INSTANCE_OCID" \
-            --action SOFTSTOP 2>/dev/null
-        log "Stop command sent"
-        wait_for_state "instance" "$INSTANCE_OCID" "STOPPED"
-    elif [[ "$instance_state" == "STOPPED" ]]; then
-        print_info "Instance is already stopped"
-    else
-        die "Instance is in unexpected state: $instance_state"
+            --display-name "pre-replace-reattach-${TIMESTAMP}" >/dev/null || true
+        # Wait for attachment
+        sleep 15
+        local reattach_state
+        reattach_state=$(oci_cmd compute boot-volume-attachment list \
+            --compartment-id "$COMPARTMENT_OCID" \
+            --availability-domain "$AVAILABILITY_DOMAIN" \
+            --instance-id "$INSTANCE_OCID" 2>/dev/null \
+            | jq -r '[.data[] | select(.["lifecycle-state"] == "ATTACHED")] | length')
+        if [[ "$reattach_state" == "0" ]]; then
+            print_info "Waiting for boot volume to attach..."
+            sleep 30
+        fi
+        print_success "Old boot volume re-attached. Ready for replacement."
     fi
 
-    # --- 8.2: Snapshot current boot volume ---
-    print_step "8.2 Creating snapshot of current boot volume (safety net)..."
-    local backup_name="reprovision-backup-${TIMESTAMP}"
-    local backup_result
-    backup_result=$(oci_cmd bv boot-volume-backup create \
-        --boot-volume-id "$CURRENT_BOOT_VOLUME_ID" \
-        --display-name "$backup_name" \
-        --type INCREMENTAL 2>/dev/null)
-
-    local backup_id
-    backup_id=$(echo "$backup_result" | jq -r '.data.id')
-    log "Boot volume backup created: $backup_id ($backup_name)"
-    print_success "Backup: $backup_id"
-    print_info "This backup is your rollback safety net. Do NOT delete it until you verify the new OS."
-
-    # Wait for backup to complete (can take a while, but we don't need to wait fully)
-    print_info "Backup is processing in background. Continuing with detach..."
-
-    # --- 8.3: Detach current boot volume ---
-    print_step "8.3 Detaching current boot volume..."
-    oci_cmd compute boot-volume-attachment detach \
-        --boot-volume-attachment-id "$CURRENT_BOOT_ATTACH_ID" \
-        --force 2>/dev/null
-    log "Detach command sent for attachment: $CURRENT_BOOT_ATTACH_ID"
-    wait_for_state "boot-volume-attachment" "$CURRENT_BOOT_ATTACH_ID" "DETACHED"
-
-    # --- 8.4: Create new boot volume from Ubuntu image ---
-    print_step "8.4 Creating new boot volume from selected Ubuntu image..."
-    local new_bv_name="bv-reprovision-${TIMESTAMP}"
-
+    # --- 8.2: Prepare metadata ---
+    print_step "8.2 Preparing instance metadata..."
     local ssh_pub_key
     ssh_pub_key=$(cat "$SSH_PUBLIC_KEY_PATH")
 
-    local create_cmd="oci_cmd bv boot-volume create \
-        --availability-domain \"$AVAILABILITY_DOMAIN\" \
-        --compartment-id \"$COMPARTMENT_OCID\" \
-        --image-id \"$IMAGE_OCID\" \
-        --display-name \"$new_bv_name\" \
-        --size-in-gbs $BOOT_VOLUME_SIZE_GB"
-
-    local new_bv_result
-    new_bv_result=$(oci_cmd bv boot-volume create \
-        --availability-domain "$AVAILABILITY_DOMAIN" \
-        --compartment-id "$COMPARTMENT_OCID" \
-        --image-id "$IMAGE_OCID" \
-        --display-name "$new_bv_name" \
-        --size-in-gbs "$BOOT_VOLUME_SIZE_GB" 2>/dev/null)
-
-    local new_bv_id
-    new_bv_id=$(echo "$new_bv_result" | jq -r '.data.id')
-    log "New boot volume created: $new_bv_id ($new_bv_name)"
-    print_success "New boot volume: $new_bv_id"
-
-    wait_for_state "boot-volume" "$new_bv_id" "AVAILABLE" 900
-
-    # --- 8.5: Attach new boot volume ---
-    print_step "8.5 Attaching new boot volume to instance..."
-    local attach_result
-    attach_result=$(oci_cmd compute boot-volume-attachment attach \
-        --boot-volume-id "$new_bv_id" \
-        --instance-id "$INSTANCE_OCID" \
-        --display-name "bv-attach-${TIMESTAMP}" 2>/dev/null)
-
-    local new_attach_id
-    new_attach_id=$(echo "$attach_result" | jq -r '.data.id')
-    log "Boot volume attachment: $new_attach_id"
-    wait_for_state "boot-volume-attachment" "$new_attach_id" "ATTACHED"
-
-    # --- 8.6: Update instance metadata (SSH key + cloud-init) ---
-    print_step "8.6 Updating instance metadata..."
-    local metadata_args="--metadata '{\"ssh_authorized_keys\": \"$ssh_pub_key\"}'"
-
+    local metadata_json
     if [[ -n "${CLOUD_INIT_PREPARED:-}" && -f "${CLOUD_INIT_PREPARED}" ]]; then
-        # Base64 encode the cloud-init for user_data
         local user_data_b64
         user_data_b64=$(base64 -w 0 "$CLOUD_INIT_PREPARED")
-
-        oci_cmd compute instance update \
-            --instance-id "$INSTANCE_OCID" \
-            --metadata "{\"ssh_authorized_keys\": \"$ssh_pub_key\", \"user_data\": \"$user_data_b64\"}" \
-            --force 2>/dev/null
+        metadata_json=$(jq -n \
+            --arg ssh "$ssh_pub_key" \
+            --arg ud "$user_data_b64" \
+            '{"ssh_authorized_keys": $ssh, "user_data": $ud}')
     else
-        oci_cmd compute instance update \
-            --instance-id "$INSTANCE_OCID" \
-            --metadata "{\"ssh_authorized_keys\": \"$ssh_pub_key\"}" \
-            --force 2>/dev/null
+        metadata_json=$(jq -n \
+            --arg ssh "$ssh_pub_key" \
+            '{"ssh_authorized_keys": $ssh}')
     fi
-    print_success "Instance metadata updated with SSH key and cloud-init"
+    print_success "Metadata prepared (SSH key + cloud-init)"
 
-    # --- 8.7: Start instance ---
-    print_step "8.7 Starting instance..."
-    oci_cmd compute instance action \
+    # --- 8.3: Stop instance if running ---
+    if [[ "$instance_state" == "RUNNING" ]]; then
+        print_step "8.3 Stopping instance for boot volume replacement..."
+        oci_cmd compute instance action \
+            --instance-id "$INSTANCE_OCID" \
+            --action SOFTSTOP 2>/dev/null >/dev/null
+        log "Stop command sent"
+        wait_for_state "instance" "$INSTANCE_OCID" "STOPPED"
+    else
+        print_step "8.3 Instance already stopped — skipping"
+    fi
+
+    # --- 8.4: Replace boot volume via image (single API call) ---
+    print_step "8.4 Replacing boot volume with new Ubuntu image..."
+    print_info "This is an atomic operation: OCI will create a new boot volume from the image,"
+    print_info "detach the old one, attach the new one, and start the instance."
+
+    local preserve_old_bv="true"
+    if $DELETE_OLD_BV; then
+        preserve_old_bv="false"
+        print_info "Old boot volume will NOT be preserved (quota strategy)."
+    else
+        print_info "Old boot volume will be preserved for rollback."
+    fi
+
+    local replace_result
+    replace_result=$(oci_cmd_checked compute instance \
+        update-instance-update-instance-source-via-image-details \
         --instance-id "$INSTANCE_OCID" \
-        --action START 2>/dev/null
-    log "Start command sent"
-    wait_for_state "instance" "$INSTANCE_OCID" "RUNNING"
+        --source-details-image-id "$IMAGE_OCID" \
+        --source-details-boot-volume-size-in-gbs "$BOOT_VOLUME_SIZE_GB" \
+        --source-details-is-preserve-boot-volume-enabled "$preserve_old_bv" \
+        --metadata "$metadata_json" \
+        --force) || true
 
-    # --- 8.8: Verify SSH connectivity ---
-    print_step "8.8 Verifying SSH connectivity..."
-    print_info "Waiting 60 seconds for cloud-init to complete..."
+    if [[ -z "$replace_result" ]]; then
+        print_error "Boot volume replacement failed."
+        print_info "Your instance should still have its old boot volume attached."
+        print_info "Check the OCI Console for details."
+        print_detail "  Instance: $INSTANCE_OCID"
+        die "Replace boot volume failed. Check OCI Console and try again."
+    fi
+
+    log "Replace boot volume command accepted."
+    print_success "Replace boot volume initiated. Waiting for completion..."
+
+    # Wait for the instance to finish the replace cycle
+    # The instance goes: STOPPED → (internal provisioning) → STOPPED
+    # We poll the boot volume attachment to detect when a NEW BV is attached
+    local wait_elapsed=0
+    local wait_max=1200
+    local old_bv="$CURRENT_BOOT_VOLUME_ID"
+    while (( wait_elapsed < wait_max )); do
+        local current_bv
+        current_bv=$(oci_cmd compute boot-volume-attachment list \
+            --compartment-id "$COMPARTMENT_OCID" \
+            --availability-domain "$AVAILABILITY_DOMAIN" \
+            --instance-id "$INSTANCE_OCID" 2>/dev/null \
+            | jq -r '[.data[] | select(.["lifecycle-state"] == "ATTACHED")] | .[0]["boot-volume-id"] // "none"')
+
+        if [[ "$current_bv" != "none" && "$current_bv" != "$old_bv" && "$current_bv" != "null" ]]; then
+            new_bv_id="$current_bv"
+            break
+        fi
+
+        printf "\r    Replacing boot volume... Elapsed: %ds / %ds" "$wait_elapsed" "$wait_max"
+        sleep 15
+        wait_elapsed=$((wait_elapsed + 15))
+    done
+    echo ""
+
+    if [[ -z "$new_bv_id" || "$new_bv_id" == "none" ]]; then
+        die "Timeout waiting for boot volume replacement to complete after ${wait_max}s"
+    fi
+
+    local new_state
+    new_state=$(oci_cmd compute instance get \
+        --instance-id "$INSTANCE_OCID" 2>/dev/null \
+        | jq -r '.data["lifecycle-state"]')
+
+    log "Replace boot volume complete. Instance state: $new_state, new BV: $new_bv_id"
+    print_success "Boot volume replaced! New BV: $new_bv_id"
+    print_detail "Instance state: $new_state"
+
+    # --- 8.5: Start instance if not already running ---
+    if [[ "$new_state" != "RUNNING" ]]; then
+        print_step "8.5 Starting instance..."
+        oci_cmd compute instance action \
+            --instance-id "$INSTANCE_OCID" \
+            --action START 2>/dev/null >/dev/null || true
+        log "Start command sent"
+        wait_for_state "instance" "$INSTANCE_OCID" "RUNNING"
+    else
+        print_step "8.5 Instance already running"
+    fi
+
+    # --- 8.6: Verify SSH connectivity ---
+    print_step "8.6 Verifying SSH connectivity..."
+    print_info "Waiting 60 seconds for cloud-init to start..."
     sleep 60
 
     # Get public IP
@@ -1664,16 +1965,24 @@ step_summary() {
     print_detail "Instance:          $INSTANCE_OCID"
     print_detail "New Image:         $IMAGE_OCID"
     print_detail "New Boot Volume:   ${new_bv_id:-N/A}"
-    print_detail "Old Boot Volume:   $CURRENT_BOOT_VOLUME_ID"
-    print_detail "Backup:            ${backup_id:-N/A}"
+    if $DELETE_OLD_BV; then
+        print_detail "Old Boot Volume:   $CURRENT_BOOT_VOLUME_ID (not preserved)"
+    else
+        print_detail "Old Boot Volume:   $CURRENT_BOOT_VOLUME_ID (preserved)"
+    fi
     print_detail "Admin User:        $NEW_USERNAME"
     print_detail "CloudPanel:        $INSTALL_CLOUDPANEL"
     print_detail "Log File:          $LOG_FILE"
     echo ""
 
-    print_info "ROLLBACK: To revert, stop the instance, detach the new boot volume,"
-    print_info "          and re-attach the old boot volume: $CURRENT_BOOT_VOLUME_ID"
-    echo ""
+    if ! $DELETE_OLD_BV; then
+        print_info "ROLLBACK: To revert, use the OCI Console 'Replace boot volume'"
+        print_info "          and select the preserved old boot volume: $CURRENT_BOOT_VOLUME_ID"
+        echo ""
+    else
+        print_warning "No rollback available — old boot volume was not preserved."
+        echo ""
+    fi
 
     if [[ "$INSTALL_CLOUDPANEL" == "true" ]]; then
         echo -e "${CYAN}${BOLD}  CloudPanel Access:${NC}"
