@@ -154,6 +154,24 @@ This is mandatory. Do NOT end a session without this recap.
   - Test migrations against both databases before committing
   - Document any dialect-specific SQL in comments
 
+## Iteration Cycle SOP
+
+Every trunk/phase completion MUST follow this quality cycle:
+
+1. **Implement** — Write the feature code
+2. **Quality Review** — Act as quality engineer:
+   - Identify tightly-coupled components that should be decoupled
+   - Extract reusable abstractions into shared interfaces
+   - Refactor existing code to use the new abstractions (don't leave dead code)
+   - Verify folder structure is clean (move misplaced files)
+3. **Test** — Run all existing tests to ensure nothing is broken
+4. **Docs** — Update documentation and fix broken links/references
+5. **Security Scan** — Run the pre-commit secret scan
+6. **Commit** — Commit with descriptive message + Co-authored-by trailer
+
+This cycle applies to every meaningful unit of work (feature, refactor, bugfix).
+Do NOT skip the quality review step — it prevents tech debt accumulation.
+
 ## Docker & Deployment
 
 - Engine and UI run as **separate Docker containers**

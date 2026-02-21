@@ -8,7 +8,7 @@ import oci
 from rich.table import Table
 
 from .auth import OCIClients
-from .common import (
+from ...common import (
     confirm,
     console,
     die,

@@ -6,7 +6,8 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Optional
 
-from .common import oci_dir, print_info, print_success, print_detail
+from ...common import print_info, print_success, print_detail
+from .helpers import oci_dir
 
 # ---------------------------------------------------------------------------
 # Field name mapping: config-file key → dataclass attribute

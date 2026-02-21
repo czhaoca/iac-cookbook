@@ -10,7 +10,7 @@ from typing import Optional
 
 import oci
 
-from .common import (
+from ...common import (
     confirm,
     console,
     die,

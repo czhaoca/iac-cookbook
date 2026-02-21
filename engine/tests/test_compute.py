@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from oci_iac.compute import _detect_arch
+from nimbus.providers.oci.compute import _detect_arch
 
 
 def test_detect_arch_arm() -> None:

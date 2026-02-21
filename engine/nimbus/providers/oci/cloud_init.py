@@ -9,13 +9,12 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from .common import (
+from ...common import (
     confirm,
     console,
     die,
     log,
     log_quiet,
-    oci_dir,
     print_detail,
     print_header,
     print_info,
@@ -26,6 +25,7 @@ from .common import (
     prompt_password,
     prompt_selection,
 )
+from .helpers import oci_dir
 from .config import ReprovisionConfig
 
 # ---------------------------------------------------------------------------

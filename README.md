@@ -152,6 +152,14 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
 - [x] Block volume strategy & control panel docs
 - [x] Nimbus engine scaffold (FastAPI + SQLAlchemy)
 - [ ] **Phase 1**: Provider adapter interface, OCI adapter, resource CRUD API
+  - [x] Shared utility extraction + import refactor
+  - [x] Provider registry + naming service
+  - [x] OCI provider adapter (ProviderAdapter interface)
+  - [x] Pydantic API schemas (decoupled from ORM)
+  - [x] Provider & Resource CRUD API endpoints
+  - [x] CLI enhancements (status, providers, resources)
+  - [x] Alembic migrations
+  - [x] 36 passing tests (API, services, OCI modules)
 - [ ] **Phase 2**: React + Vite frontend, dashboard, resource cards
 - [ ] **Phase 3**: Budget monitoring, spending alerts, auto-enforcement
 - [ ] **Phase 4**: Cloudflare + Proxmox adapters, cross-cloud workflows

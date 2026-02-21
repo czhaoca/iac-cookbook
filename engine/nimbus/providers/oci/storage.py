@@ -8,7 +8,7 @@ from typing import Optional
 import oci
 
 from .auth import OCIClients
-from .common import (
+from ...common import (
     TIMESTAMP,
     confirm,
     console,
