@@ -11,16 +11,21 @@ This repository provides ready-to-use IaC scripts and templates for provisioning
 ```
 iac-cookbook/
 ├── oci/                    # Oracle Cloud Infrastructure
-│   ├── lib/               # Reusable Bash modules (sourced by scripts)
-│   │   ├── common.sh      # Colors, logging, prompts, JSON transaction log
-│   │   ├── auth.sh        # OCI profile management, login, connectivity
-│   │   ├── compute.sh     # Instance operations, image selection, state mgmt
-│   │   ├── storage.sh     # Boot/block volume, quota management
-│   │   ├── networking.sh  # VNIC, IP lookup, SSH verification
-│   │   └── cloud-init.sh  # SSH key, user config, template processing
-│   ├── scripts/           # Orchestrator scripts (source lib/*)
+│   ├── oci_iac/           # Python CLI package (OCI SDK)
+│   │   ├── cli.py         # Click CLI entry point
+│   │   ├── common.py      # Rich console UI, logging, JSON transaction log
+│   │   ├── config.py      # Dataclass config loader
+│   │   ├── auth.py        # OCI SDK client factory, multi-profile mgmt
+│   │   ├── compute.py     # Instance/image operations
+│   │   ├── storage.py     # Quota checks, boot volume replacement
+│   │   ├── networking.py  # VNIC/IP lookup, SSH verification
+│   │   └── cloud_init.py  # SSH key, user config, template processing
+│   ├── tests/             # pytest tests
+│   ├── lib/               # Bash modules (legacy, still functional)
+│   ├── scripts/           # Bash orchestrator scripts
 │   │   └── reprovision-vm.sh
 │   ├── templates/         # Config & cloud-init templates (committed)
+│   ├── pyproject.toml     # Python project config
 │   └── local/             # YOUR secrets & config (GITIGNORED)
 ├── docs/                   # Architecture decisions & comparisons
 │   ├── oci/architecture/  # OCI architecture decision records
@@ -151,32 +156,50 @@ You are welcome to **fork** this repo. When you do:
 
 ## OCI Scripts
 
-### VM Reprovisioning (`oci/scripts/reprovision-vm.sh`)
+### VM Reprovisioning
 
-Interactive script to reprovision an OCI compute instance with a fresh Ubuntu image by swapping the boot volume — without deleting the instance.
+Two entry points are available — both provide the same interactive workflow:
 
-**Architecture**: Thin orchestrator that sources modular libraries from `oci/lib/`:
+#### Python CLI (recommended)
+
+Uses OCI Python SDK directly — native API waiters, structured errors, Rich terminal UI.
+
+```bash
+# Set up virtual environment (one-time)
+cd oci
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+
+# Interactive (recommended for first use)
+oci-iac reprovision
+
+# Dry run
+oci-iac reprovision --dry-run
+
+# See all options
+oci-iac reprovision --help
+
+# Parameterised
+oci-iac reprovision --profile PROD --instance-id ocid1.instance.oc1...
+```
+
+**Python modules** (`oci/oci_iac/`):
 
 | Module | Purpose |
 |--------|---------|
-| `common.sh` | Colors, logging, prompts, JSON transaction log |
-| `auth.sh` | OCI multi-profile management, login, connectivity |
-| `compute.sh` | Instance/image selection, state management |
-| `storage.sh` | Quota checks, boot volume replacement |
-| `networking.sh` | VNIC/IP lookup, SSH verification |
-| `cloud-init.sh` | SSH key, user config, template processing |
+| `cli.py` | Click CLI entry point with all flags |
+| `common.py` | Rich console UI, logging, JSON transaction log |
+| `config.py` | Dataclass config loader from instance-config files |
+| `auth.py` | OCI SDK client factory, multi-profile management |
+| `compute.py` | Instance/image selection, state management via SDK |
+| `storage.py` | Quota checks, boot volume replacement via SDK |
+| `networking.py` | VNIC/IP lookup, SSH verification |
+| `cloud_init.py` | SSH key, user config, template processing |
 
-**Features**:
-- Interactive or parameterized (CLI flags)
-- Auto-detects x86 vs ARM architecture
-- Latest Ubuntu image selection
-- SSH key management (generate, select, copy)
-- Cloud-init templates (basic Ubuntu hardening, CloudPanel)
-- Free tier quota safeguards with recovery strategies
-- Atomic boot volume replacement (OCI API, no instance deletion)
-- New admin user setup (disables default ubuntu user)
-- Recovery from failed previous runs
-- Dry-run mode, JSON transaction logging
+#### Bash Script (legacy, still functional)
+
+Uses `oci` CLI subprocess calls. No Python required.
 
 ```bash
 # Interactive (recommended for first use)
@@ -188,6 +211,29 @@ Interactive script to reprovision an OCI compute instance with a fresh Ubuntu im
 # See all options
 ./oci/scripts/reprovision-vm.sh --help
 ```
+
+**Bash modules** (`oci/lib/`):
+
+| Module | Purpose |
+|--------|---------|
+| `common.sh` | Colors, logging, prompts, JSON transaction log |
+| `auth.sh` | OCI multi-profile management, login, connectivity |
+| `compute.sh` | Instance/image selection, state management |
+| `storage.sh` | Quota checks, boot volume replacement |
+| `networking.sh` | VNIC/IP lookup, SSH verification |
+| `cloud-init.sh` | SSH key, user config, template processing |
+
+**Features** (both entry points):
+- Interactive or parameterized (CLI flags)
+- Auto-detects x86 vs ARM architecture
+- Latest Ubuntu image selection
+- SSH key management (generate, select, copy)
+- Cloud-init templates (basic Ubuntu hardening, CloudPanel)
+- Free tier quota safeguards with recovery strategies
+- Atomic boot volume replacement (OCI API, no instance deletion)
+- New admin user setup (disables default ubuntu user)
+- Recovery from failed previous runs
+- Dry-run mode, JSON transaction logging
 
 **Documentation**:
 - [OCI API Key Setup Guide](oci/docs/setup-api-key.md)
@@ -208,10 +254,10 @@ Contributions are welcome! Please follow these guidelines:
 - [x] OCI VM Reprovisioning (boot volume swap)
 - [x] Modular Bash library architecture (`oci/lib/`)
 - [x] Block volume strategy & control panel comparison docs
+- [x] Python CLI with OCI SDK (`oci/oci_iac/`)
 - [ ] Block volume provisioning script (`manage-volumes.sh`)
 - [ ] New VM provisioning script (`provision-vm.sh`)
 - [ ] Cloudflare services scripts
-- [ ] Phase 2: Python CLI with OCI SDK (when 5+ scripts needed)
 - [ ] Cross-cloud migration scripts
 - [ ] Cost optimization utilities
 

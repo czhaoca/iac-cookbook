@@ -1,0 +1,8 @@
+# OCI IaC Python CLI — Dependencies
+oci>=2.130.0
+click>=8.1
+rich>=13.0
+
+# Dev / Testing
+pytest>=7.0
+pytest-mock>=3.10

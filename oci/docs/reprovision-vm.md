@@ -1,12 +1,38 @@
-# OCI VM Reprovisioning Script — Usage Guide
+# OCI VM Reprovisioning — Usage Guide
 
 ## Overview
 
-`reprovision-vm.sh` is an interactive bash script that reprovisions an existing OCI compute instance with a fresh Ubuntu image. It replaces the boot volume atomically via the OCI API without deleting the instance, preserving your VNIC, IP address, and instance shape.
+Reprovision an existing OCI compute instance with a fresh Ubuntu image by replacing the boot volume atomically via the OCI API. The instance is NOT deleted — VNIC, IP address, and shape are preserved.
+
+Two entry points are available:
+
+| Entry Point | Language | Dependencies |
+|-------------|----------|-------------|
+| `oci-iac reprovision` | Python (OCI SDK) | Python 3.9+, `oci`, `click`, `rich` |
+| `./oci/scripts/reprovision-vm.sh` | Bash (OCI CLI) | `oci` CLI, `jq`, `openssl` |
+
+Both provide the same interactive workflow and support the same flags.
 
 ## Architecture
 
-The script is a thin orchestrator (~435 lines) that sources modular libraries from `oci/lib/`:
+### Python CLI (`oci/oci_iac/`)
+
+Uses OCI Python SDK directly — native API waiters, typed error handling, Rich terminal UI.
+
+| Module | Purpose |
+|--------|---------|
+| `cli.py` | Click CLI entry point with all flags |
+| `common.py` | Rich console, logging, prompts, JSON transaction log |
+| `config.py` | Dataclass config loader from instance-config files |
+| `auth.py` | OCI SDK client factory, multi-profile management |
+| `compute.py` | Instance/image selection, state management via SDK |
+| `storage.py` | Quota checks, boot volume replacement via SDK |
+| `networking.py` | VNIC/IP lookup, SSH verification |
+| `cloud_init.py` | SSH key, user config, template processing |
+
+### Bash Script (`oci/lib/` + `oci/scripts/`)
+
+Uses `oci` CLI subprocess calls. No Python required.
 
 | Module | Purpose |
 |--------|---------|
@@ -16,8 +42,6 @@ The script is a thin orchestrator (~435 lines) that sources modular libraries fr
 | `lib/storage.sh` | Quota checks, boot volume replacement |
 | `lib/networking.sh` | VNIC/IP lookup, SSH verification |
 | `lib/cloud-init.sh` | SSH key, user config, cloud-init template processing |
-
-These modules can be sourced independently by future scripts (e.g., `provision-vm.sh`, `manage-volumes.sh`).
 
 ## What It Does (Workflow)
 
@@ -36,31 +60,55 @@ These modules can be sourced independently by future scripts (e.g., `provision-v
 
 ## Prerequisites
 
+### Python CLI (recommended)
+```bash
+cd oci
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+```
+
+### Bash Script
 - OCI CLI installed and configured (`oci --version`)
 - `jq` installed (`jq --version`)
 - `openssl` installed
+
+### Both
 - OCI config at `~/.oci/config` with at least one profile
 - SSH key(s) — the script can generate one if none exist
 
 ## Quick Start
 
+### Python CLI
+
 ```bash
 # Interactive mode (recommended for first use)
-./oci/scripts/reprovision-vm.sh
+oci-iac reprovision
 
 # With a specific OCI profile
-./oci/scripts/reprovision-vm.sh --profile PROD
+oci-iac reprovision --profile PROD
 
-# With flags
-./oci/scripts/reprovision-vm.sh \
+# Dry run
+oci-iac reprovision --dry-run
+
+# See all options
+oci-iac reprovision --help
+
+# Fully parameterised
+oci-iac reprovision \
   --profile PROD \
   --instance-id ocid1.instance.oc1... \
   --image-id ocid1.image.oc1... \
   --ssh-key oci/local/ssh/my_key.pub \
   --cloud-init oci/templates/cloud-init/cloudpanel-ubuntu.yaml
+```
 
-# Dry run (see what would happen without executing)
-./oci/scripts/reprovision-vm.sh --dry-run
+### Bash Script
+
+```bash
+./oci/scripts/reprovision-vm.sh
+./oci/scripts/reprovision-vm.sh --profile PROD --dry-run
+./oci/scripts/reprovision-vm.sh --help
 ```
 
 ## CLI Flags
