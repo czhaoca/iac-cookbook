@@ -23,6 +23,7 @@ Before ANY `git add`, `git commit`, or `git push`, you MUST:
 3. **ALWAYS provide templates**: for every config file in `local/`, provide a corresponding `.template` file in `templates/` with placeholder values and comments explaining what to fill in.
 4. **When writing scripts**: read secrets from config files in `local/`, environment variables, or CLI prompts — never embed them.
 5. **When providing solutions**: always parameterize secrets. Reference the `local/` config file path. Show the user how to copy the template and fill in their values.
+6. **NEVER expose infrastructure naming conventions** (instance names, hostnames, region-prefixed identifiers, domain patterns, or any naming scheme that could reveal the owner's infrastructure topology). In public-facing docs or scripts, use generic placeholders like `vm-arm-1`, `vm-x86-1`, `my-instance`, etc. Real names belong in `local/` config files only.
 
 ## File Structure Convention
 
@@ -63,3 +64,19 @@ Before committing, grep for these patterns — any match is a potential leak:
 - Always check if config file exists before sourcing; print helpful error if missing
 - Provide `--help` output in every script
 - Include dry-run mode for destructive operations
+
+## Architecture Decision Records
+
+Save architectural analysis and decision records in `docs/` to document **why** we choose specific cloud architectures, tools, and patterns:
+
+```
+docs/
+├── <provider>/
+│   └── architecture/    # Cloud architecture decisions (storage, networking, compute)
+├── control-panels/      # Control panel comparison and selection rationale
+└── <topic>/             # Other cross-cutting decisions
+```
+
+- Each document should include: problem statement, options considered, decision rationale, trade-offs, and **links to official docs** so readers can verify and dive deeper.
+- Ground-check all claims against official documentation — do not rely on assumptions.
+- These docs are committed to the repo so contributors (and forks) understand the reasoning behind infrastructure choices.
