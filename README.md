@@ -10,30 +10,26 @@ This repository provides ready-to-use IaC scripts and templates for provisioning
 
 ```
 iac-cookbook/
-├── oci/                    # Oracle Cloud Infrastructure scripts
-│   └── free-tier/         # OCI Free Tier specific resources
-│       ├── compute/       # Compute instances and configurations
-│       ├── networking/    # VCN, subnets, security lists
-│       ├── storage/       # Block volumes, object storage
-│       ├── database/      # Always Free autonomous databases
-│       └── scripts/       # Helper scripts and utilities
+├── oci/                    # Oracle Cloud Infrastructure
+│   ├── lib/               # Reusable Bash modules (sourced by scripts)
+│   │   ├── common.sh      # Colors, logging, prompts, JSON transaction log
+│   │   ├── auth.sh        # OCI profile management, login, connectivity
+│   │   ├── compute.sh     # Instance operations, image selection, state mgmt
+│   │   ├── storage.sh     # Boot/block volume, quota management
+│   │   ├── networking.sh  # VNIC, IP lookup, SSH verification
+│   │   └── cloud-init.sh  # SSH key, user config, template processing
+│   ├── scripts/           # Orchestrator scripts (source lib/*)
+│   │   └── reprovision-vm.sh
+│   ├── templates/         # Config & cloud-init templates (committed)
+│   └── local/             # YOUR secrets & config (GITIGNORED)
+├── docs/                   # Architecture decisions & comparisons
+│   ├── oci/architecture/  # OCI architecture decision records
+│   └── control-panels/    # Control panel comparison
 ├── gcp/                   # Google Cloud Platform scripts (coming soon)
 ├── azure/                 # Microsoft Azure scripts (coming soon)
 ├── aws/                   # Amazon Web Services scripts (coming soon)
 ├── cloudflare/            # Cloudflare services and edge computing
-│   ├── dns/              # DNS management and records
-│   ├── workers/          # Workers and serverless functions
-│   ├── pages/            # Pages deployments
-│   ├── r2/               # R2 object storage
-│   ├── d1/               # D1 database
-│   ├── kv/               # KV storage
-│   ├── waf/              # Web Application Firewall rules
-│   ├── cdn/              # CDN and caching configurations
-│   └── scripts/          # Helper scripts and utilities
 └── common/                # Shared resources across clouds
-    ├── templates/         # Common templates and patterns
-    ├── scripts/          # Cross-cloud utility scripts
-    └── docs/             # Documentation and guides
 ```
 
 ## Features
@@ -159,16 +155,28 @@ You are welcome to **fork** this repo. When you do:
 
 Interactive script to reprovision an OCI compute instance with a fresh Ubuntu image by swapping the boot volume — without deleting the instance.
 
+**Architecture**: Thin orchestrator that sources modular libraries from `oci/lib/`:
+
+| Module | Purpose |
+|--------|---------|
+| `common.sh` | Colors, logging, prompts, JSON transaction log |
+| `auth.sh` | OCI multi-profile management, login, connectivity |
+| `compute.sh` | Instance/image selection, state management |
+| `storage.sh` | Quota checks, boot volume replacement |
+| `networking.sh` | VNIC/IP lookup, SSH verification |
+| `cloud-init.sh` | SSH key, user config, template processing |
+
 **Features**:
 - Interactive or parameterized (CLI flags)
 - Auto-detects x86 vs ARM architecture
 - Latest Ubuntu image selection
 - SSH key management (generate, select, copy)
 - Cloud-init templates (basic Ubuntu hardening, CloudPanel)
-- Boot volume snapshot before swap (rollback safety net)
+- Free tier quota safeguards with recovery strategies
+- Atomic boot volume replacement (OCI API, no instance deletion)
 - New admin user setup (disables default ubuntu user)
-- Dry-run mode
-- Full operation logging
+- Recovery from failed previous runs
+- Dry-run mode, JSON transaction logging
 
 ```bash
 # Interactive (recommended for first use)
@@ -198,10 +206,12 @@ Contributions are welcome! Please follow these guidelines:
 
 - [x] OCI Free Tier scripts
 - [x] OCI VM Reprovisioning (boot volume swap)
+- [x] Modular Bash library architecture (`oci/lib/`)
+- [x] Block volume strategy & control panel comparison docs
+- [ ] Block volume provisioning script (`manage-volumes.sh`)
+- [ ] New VM provisioning script (`provision-vm.sh`)
 - [ ] Cloudflare services scripts
-- [ ] GCP free tier resources
-- [ ] Azure free tier resources
-- [ ] AWS free tier resources
+- [ ] Phase 2: Python CLI with OCI SDK (when 5+ scripts needed)
 - [ ] Cross-cloud migration scripts
 - [ ] Cost optimization utilities
 
