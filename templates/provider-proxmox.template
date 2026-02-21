@@ -1,0 +1,27 @@
+# Proxmox Provider Configuration Template
+# Copy to local/config/provider-proxmox.yaml and fill in your values.
+
+provider:
+  id: "proxmox-home"
+  display_name: "Home Proxmox Server"
+  type: proxmox
+
+# Proxmox API endpoint
+api_url: "https://192.168.1.100:8006/api2/json"
+
+# Authentication — use API token (not root password)
+# Generate in Proxmox: Datacenter → API Tokens
+auth:
+  user: "root@pam"
+  token_id: "nimbus"
+  # token_secret stored in local/config/proxmox-token.txt
+  token_secret_path: "local/config/proxmox-token.txt"
+
+# SSL verification (set false for self-signed certs)
+verify_ssl: false
+
+# Default node for VM creation
+default_node: "pve"
+
+# Storage pool for VM disks
+default_storage: "local-lvm"

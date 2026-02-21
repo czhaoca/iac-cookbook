@@ -1,111 +1,92 @@
-# IaC Cookbook - Multi-Cloud Infrastructure as Code Scripts
+# Nimbus — Personal Multi-Cloud Orchestration Platform
 
-A comprehensive collection of Infrastructure as Code (IaC) command scripts for multiple cloud providers including OCI, GCP, Azure, AWS, and Cloudflare.
+A personal multi-cloud orchestration platform for provisioning, monitoring, and managing infrastructure across OCI, Azure, GCP, AWS, Cloudflare, and self-hosted Proxmox — with budget enforcement, cross-cloud workflows, and a dashboard UI.
 
-## Overview
-
-This repository provides ready-to-use IaC scripts and templates for provisioning cloud infrastructure across different cloud providers. Starting with Oracle Cloud Infrastructure (OCI) Free Tier resources, the project aims to simplify cloud resource deployment through reusable, modular scripts.
-
-## Project Structure
+## Architecture
 
 ```
-iac-cookbook/
-├── oci/                    # Oracle Cloud Infrastructure
-│   ├── oci_iac/           # Python CLI package (OCI SDK)
-│   │   ├── cli.py         # Click CLI entry point
-│   │   ├── common.py      # Rich console UI, logging, JSON transaction log
-│   │   ├── config.py      # Dataclass config loader
-│   │   ├── auth.py        # OCI SDK client factory, multi-profile mgmt
-│   │   ├── compute.py     # Instance/image operations
-│   │   ├── storage.py     # Quota checks, boot volume replacement
-│   │   ├── networking.py  # VNIC/IP lookup, SSH verification
-│   │   └── cloud_init.py  # SSH key, user config, template processing
-│   ├── tests/             # pytest tests
-│   ├── lib/               # Bash modules (legacy, still functional)
-│   ├── scripts/           # Bash orchestrator scripts
-│   │   └── reprovision-vm.sh
-│   ├── templates/         # Config & cloud-init templates (committed)
+nimbus/
+├── engine/                 # Backend (FastAPI + CLI)
+│   ├── nimbus/            # Python package
+│   │   ├── api/           # FastAPI routes (health, resources, providers)
+│   │   ├── cli/           # Click CLI (nimbus status, nimbus serve)
+│   │   ├── providers/     # Cloud provider adapters
+│   │   │   ├── base.py    # Abstract provider interface
+│   │   │   └── oci/       # OCI adapter (SDK-based)
+│   │   ├── models/        # SQLAlchemy models (resource, budget, etc.)
+│   │   ├── services/      # Orchestrator, budget monitor, naming
+│   │   ├── app.py         # FastAPI application factory
+│   │   ├── config.py      # App settings (env vars, .env)
+│   │   └── db.py          # Database engine, session factory
+│   ├── tests/             # pytest
 │   ├── pyproject.toml     # Python project config
-│   └── local/             # YOUR secrets & config (GITIGNORED)
-├── docs/                   # Architecture decisions & comparisons
-│   ├── oci/architecture/  # OCI architecture decision records
-│   └── control-panels/    # Control panel comparison
-├── gcp/                   # Google Cloud Platform scripts (coming soon)
-├── azure/                 # Microsoft Azure scripts (coming soon)
-├── aws/                   # Amazon Web Services scripts (coming soon)
-├── cloudflare/            # Cloudflare services and edge computing
-└── common/                # Shared resources across clouds
+│   └── Dockerfile
+├── ui/                     # Frontend (React + Vite) — Phase 2
+├── deploy/                 # Docker Compose, Proxmox scripts, Nginx
+├── oci/                    # OCI-specific scripts & templates
+│   ├── oci_iac/           # Python CLI (OCI SDK) — being migrated to engine/
+│   ├── lib/               # Bash modules (legacy, functional)
+│   ├── scripts/           # Bash orchestrator (reprovision-vm.sh)
+│   └── templates/         # OCI config templates
+├── docs/                   # Architecture decisions, comparisons
+├── templates/              # Global config templates
+├── docker-compose.yml      # Dev environment
+└── local/                  # YOUR secrets & config (GITIGNORED)
 ```
 
 ## Features
 
-### OCI Free Tier Resources
-- **Compute**: Provision Always Free compute instances (AMD/ARM)
-- **Networking**: Setup VCNs, subnets, and security configurations
-- **Storage**: Manage block volumes and object storage buckets
-- **Database**: Deploy Autonomous Database instances
+### Engine (Backend)
+- **FastAPI REST API** — resource CRUD, provider management, budget rules
+- **CLI** — `nimbus status`, `nimbus serve`, provider-specific commands
+- **Provider Adapters** — pluggable interface for OCI, Azure, Cloudflare, Proxmox
+- **SQLAlchemy ORM** — SQLite (dev) or PostgreSQL (prod), Alembic migrations
+- **Budget Enforcement** — spending alerts, auto-terminate ephemeral, firewall lockdown
+- **Cross-Cloud Orchestration** — VM+DNS, budget lockdown, DR failover
 
-### Cloudflare Resources
-- **DNS**: Manage DNS records and zones
-- **Workers**: Deploy serverless functions at the edge
-- **Pages**: Static site deployments with CI/CD
-- **R2**: S3-compatible object storage
-- **D1**: Serverless SQL database
-- **KV**: Key-value storage at the edge
-- **WAF**: Web Application Firewall rules
-- **CDN**: Content delivery and caching
+### OCI Provider
+- **VM Reprovisioning** — atomic boot volume replacement (no instance deletion)
+- **Free Tier Quota Safeguards** — interactive recovery strategies
+- **Multi-Profile Auth** — manage multiple OCI CLI profiles
+- **Cloud-Init Templates** — Ubuntu hardening, CloudPanel, custom scripts
 
-### Prerequisites
-
-#### For OCI:
-- OCI CLI installed and configured
-- Valid OCI account with Free Tier resources available
-- Terraform (optional, for Terraform-based scripts)
-
-#### For Cloudflare:
-- Cloudflare account (free tier available)
-- Cloudflare API token with appropriate permissions
-- Wrangler CLI for Workers deployment (optional)
+### Security
+- All secrets in `local/` directories (gitignored, never committed)
+- Pre-commit scanning for credentials, OCIDs, private IPs
+- Config templates with placeholder values in `templates/`
 
 ## Quick Start
 
-### OCI Free Tier Setup
+### Engine Setup
 
-1. **Configure OCI CLI**:
-   ```bash
-   oci setup config
-   ```
+```bash
+cd engine
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 
-2. **Set environment variables**:
-   ```bash
-   export OCI_TENANCY_OCID="your-tenancy-ocid"
-   export OCI_USER_OCID="your-user-ocid"
-   export OCI_REGION="your-region"
-   ```
+# Start API server
+nimbus serve
 
-3. **Run scripts**:
-   ```bash
-   cd oci/free-tier/compute
-   ./create-free-instance.sh
-   ```
+# Check status
+nimbus status
+```
 
-## Script Categories
+### Docker Setup
 
-### Infrastructure Provisioning
-- Create and manage compute instances
-- Network infrastructure setup
-- Storage provisioning
-- Database deployment
+```bash
+docker compose up --build
+# Engine: http://localhost:8000
+# Health: http://localhost:8000/health
+```
 
-### Configuration Management
-- Security configurations
-- Resource tagging
-- Cost optimization settings
+### OCI VM Reprovisioning (Legacy CLI)
 
-### Maintenance & Operations
-- Backup scripts
-- Monitoring setup
-- Resource cleanup utilities
+```bash
+cd oci
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && pip install -e .
+oci-iac reprovision
+```
 
 ## 🔒 Security & Local Configuration
 
@@ -154,124 +135,41 @@ You are welcome to **fork** this repo. When you do:
 > - If your fork is **private**, you still should not store secrets in git — use the `local/` directory convention
 > - Run `git diff --cached | grep -iE 'password|token|secret|key_file|ocid1\.'` before every push
 
-## OCI Scripts
+## OCI Provider
 
 ### VM Reprovisioning
 
-Two entry points are available — both provide the same interactive workflow:
+Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
 
-#### Python CLI (recommended)
-
-Uses OCI Python SDK directly — native API waiters, structured errors, Rich terminal UI.
-
-```bash
-# Set up virtual environment (one-time)
-cd oci
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-
-# Interactive (recommended for first use)
-oci-iac reprovision
-
-# Dry run
-oci-iac reprovision --dry-run
-
-# See all options
-oci-iac reprovision --help
-
-# Parameterised
-oci-iac reprovision --profile PROD --instance-id ocid1.instance.oc1...
-```
-
-**Python modules** (`oci/oci_iac/`):
-
-| Module | Purpose |
-|--------|---------|
-| `cli.py` | Click CLI entry point with all flags |
-| `common.py` | Rich console UI, logging, JSON transaction log |
-| `config.py` | Dataclass config loader from instance-config files |
-| `auth.py` | OCI SDK client factory, multi-profile management |
-| `compute.py` | Instance/image selection, state management via SDK |
-| `storage.py` | Quota checks, boot volume replacement via SDK |
-| `networking.py` | VNIC/IP lookup, SSH verification |
-| `cloud_init.py` | SSH key, user config, template processing |
-
-#### Bash Script (legacy, still functional)
-
-Uses `oci` CLI subprocess calls. No Python required.
-
-```bash
-# Interactive (recommended for first use)
-./oci/scripts/reprovision-vm.sh
-
-# Dry run
-./oci/scripts/reprovision-vm.sh --dry-run
-
-# See all options
-./oci/scripts/reprovision-vm.sh --help
-```
-
-**Bash modules** (`oci/lib/`):
-
-| Module | Purpose |
-|--------|---------|
-| `common.sh` | Colors, logging, prompts, JSON transaction log |
-| `auth.sh` | OCI multi-profile management, login, connectivity |
-| `compute.sh` | Instance/image selection, state management |
-| `storage.sh` | Quota checks, boot volume replacement |
-| `networking.sh` | VNIC/IP lookup, SSH verification |
-| `cloud-init.sh` | SSH key, user config, template processing |
-
-**Features** (both entry points):
-- Interactive or parameterized (CLI flags)
-- Auto-detects x86 vs ARM architecture
-- Latest Ubuntu image selection
-- SSH key management (generate, select, copy)
-- Cloud-init templates (basic Ubuntu hardening, CloudPanel)
-- Free tier quota safeguards with recovery strategies
-- Atomic boot volume replacement (OCI API, no instance deletion)
-- New admin user setup (disables default ubuntu user)
-- Recovery from failed previous runs
-- Dry-run mode, JSON transaction logging
-
-**Documentation**:
-- [OCI API Key Setup Guide](oci/docs/setup-api-key.md)
-- [Reprovisioning Script Usage Guide](oci/docs/reprovision-vm.md)
-
-## Contributing
-
-Contributions are welcome! Please follow these guidelines:
-1. Fork the repository
-2. Create a feature branch
-3. Add your scripts with proper documentation
-4. **Never commit secrets** — use the `local/` directory convention
-5. Submit a pull request
+- **Python CLI** (recommended): `cd oci && pip install -e . && oci-iac reprovision`
+- **Bash** (legacy): `./oci/scripts/reprovision-vm.sh`
+- **Docs**: [API Key Setup](oci/docs/setup-api-key.md) | [Usage Guide](oci/docs/reprovision-vm.md)
 
 ## Roadmap
 
-- [x] OCI Free Tier scripts
 - [x] OCI VM Reprovisioning (boot volume swap)
-- [x] Modular Bash library architecture (`oci/lib/`)
-- [x] Block volume strategy & control panel comparison docs
-- [x] Python CLI with OCI SDK (`oci/oci_iac/`)
-- [ ] Block volume provisioning script (`manage-volumes.sh`)
-- [ ] New VM provisioning script (`provision-vm.sh`)
-- [ ] Cloudflare services scripts
-- [ ] Cross-cloud migration scripts
-- [ ] Cost optimization utilities
+- [x] Modular Bash library + Python SDK migration
+- [x] Block volume strategy & control panel docs
+- [x] Nimbus engine scaffold (FastAPI + SQLAlchemy)
+- [ ] **Phase 1**: Provider adapter interface, OCI adapter, resource CRUD API
+- [ ] **Phase 2**: React + Vite frontend, dashboard, resource cards
+- [ ] **Phase 3**: Budget monitoring, spending alerts, auto-enforcement
+- [ ] **Phase 4**: Cloudflare + Proxmox adapters, cross-cloud workflows
+- [ ] **Phase 5**: Docker production config, HA/DR, database backup
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. **Never commit secrets** — use the `local/` directory convention
+4. Submit a pull request
+
+> ⚠️ If your fork is public, verify `.gitignore` is intact before pushing.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues, questions, or contributions:
-- Open an issue in the GitHub repository
-- Check existing documentation in `/common/docs`
-- Review examples in each cloud provider's directory
+MIT License — see LICENSE file for details.
 
 ## Disclaimer
 
-These scripts are provided as-is. Always review and test scripts in a development environment before using in production. Be aware of cloud provider pricing and free tier limitations.
+These scripts are provided as-is. Always review and test in a development environment first. Be aware of cloud provider pricing and free tier limitations.

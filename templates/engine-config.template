@@ -1,0 +1,27 @@
+# Nimbus Engine Configuration Template
+# Copy to local/config/nimbus.yaml and fill in your values.
+
+app:
+  name: Nimbus
+  environment: development  # development | production
+  debug: false
+
+database:
+  # SQLite (default, zero-setup):
+  url: "sqlite:///data/nimbus.db"
+  # PostgreSQL (self-hosted or OCI free tier):
+  # url: "postgresql://user:password@host:5432/nimbus"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+# Resource naming — prefix applied to all created resources
+naming:
+  default_prefix: "dev"
+  # Pattern: {prefix}-{resource_type}-{label}-{seq}
+
+# Budget enforcement
+budget:
+  check_interval_minutes: 5
+  default_action: "alert"  # alert | scale_down | terminate_ephemeral | firewall_lockdown

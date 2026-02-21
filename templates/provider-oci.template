@@ -1,0 +1,27 @@
+# OCI Provider Configuration Template
+# Copy to local/config/provider-oci.yaml and fill in your values.
+
+provider:
+  id: "oci-main"
+  display_name: "OCI Main Account"
+  type: oci
+  region: "us-ashburn-1"  # Change to your region
+
+# OCI CLI profile name (from ~/.oci/config)
+oci_profile: "DEFAULT"
+
+# Path to OCI API key (relative to repo root local/ directory)
+# credentials_path: "local/config/oci-api-key.pem"
+
+# Resource defaults
+defaults:
+  compartment_id: "ocid1.compartment.oc1..REPLACE_WITH_YOUR_COMPARTMENT_OCID"
+  availability_domain: ""  # Leave empty for auto-detect
+  shape: "VM.Standard.E2.1.Micro"  # Free tier x86
+  # shape: "VM.Standard.A1.Flex"   # Free tier ARM
+
+# Free tier limits (for quota safeguard)
+free_tier:
+  max_instances: 4  # 2x E2.1.Micro + 1x A1.Flex (up to 4 OCPU)
+  max_block_storage_gb: 200
+  max_boot_volume_gb: 200

@@ -1,4 +1,12 @@
-# CLAUDE.md — AI Assistant Rules for iac-cookbook
+# CLAUDE.md — AI Assistant Rules for Nimbus
+
+## Project Identity
+
+**Nimbus** is a personal multi-cloud orchestration platform with:
+- **Engine** (Python/FastAPI) — backend API + CLI for provisioning, monitoring, budget enforcement
+- **UI** (React/Vite) — frontend dashboard for observability and actions
+- **Providers** — OCI, Azure, GCP, AWS, Cloudflare, Proxmox adapters
+- **Mono-repo** now (`nimbus`); future split: `nimbus-core` + `nimbus-ui`
 
 ## ⚠️ CRITICAL: Pre-Commit Security Checklist
 
@@ -80,3 +88,76 @@ docs/
 - Each document should include: problem statement, options considered, decision rationale, trade-offs, and **links to official docs** so readers can verify and dive deeper.
 - Ground-check all claims against official documentation — do not rely on assumptions.
 - These docs are committed to the repo so contributors (and forks) understand the reasoning behind infrastructure choices.
+
+## Iteration & Dev History Tracking
+
+### Conversation History
+
+Every AI-assisted development session MUST create a summary file:
+
+```
+local/dev-history/0.0.X-short-description.md
+```
+
+- **Location**: `local/dev-history/` (GITIGNORED — never committed)
+- **Numbering**: `0.0.N` auto-increments with each session. Do NOT increment to `0.1.0` unless explicitly instructed by the user.
+- **Content template**:
+  ```markdown
+  # 0.0.X — Short Description
+  **Date**: YYYY-MM-DD
+  **Summary**: One-paragraph overview of what was accomplished.
+  ## Key Decisions
+  - Decision 1
+  - Decision 2
+  ## Files Changed
+  - file1.py — what changed
+  - file2.md — what changed
+  ## Next Steps
+  - What's queued for the next session
+  ```
+
+### Roadmap Updates
+
+Every session MUST update the roadmap in plan.md or README.md:
+- Check off completed items
+- Add newly discovered items
+- Re-prioritize if scope changed
+
+### Scrum-Style Recap
+
+Before wrapping up ANY session, the AI MUST interactively discuss:
+1. **What was done** — bullet list of completed work
+2. **What's blocked** — any blockers or decisions needed
+3. **What's next** — top 3 priorities for the next session
+4. **Realignment** — ask the user if priorities should change
+
+This is mandatory. Do NOT end a session without this recap.
+
+## Resource Naming & Collision Prevention
+
+- All cloud resources MUST use a configurable prefix from the user's config: `{prefix}-{type}-{label}-{seq}`
+- Examples: `prod-vm-arm-01`, `dev-dns-api`, `staging-vol-data-01`
+- Before creating ANY named resource:
+  1. Query the local database for existing names with the same prefix
+  2. For DNS records: check the DNS provider API for subdomain existence
+  3. If collision detected: auto-increment sequence number or prompt user
+- Prefix configuration lives in `local/config/` (gitignored)
+- Templates in `templates/` use generic placeholders: `{prefix}`, `my-resource`, etc.
+
+## Database Schema Rules
+
+- Primary database: **SQLite** (file in `local/data/nimbus.db`)
+- ORM: **SQLAlchemy** with **Alembic** migrations
+- If a future Postgres deployment is added:
+  - Both SQLite and Postgres schema MUST be kept in sync
+  - Use Alembic migrations that are dialect-compatible
+  - Test migrations against both databases before committing
+  - Document any dialect-specific SQL in comments
+
+## Docker & Deployment
+
+- Engine and UI run as **separate Docker containers**
+- `docker-compose.yml` at repo root for development
+- `deploy/` directory for production configs, Proxmox scripts, Nginx configs
+- Database file (SQLite) is mounted as a Docker volume from `local/data/`
+- Credentials mounted from `local/config/` — NEVER baked into Docker images

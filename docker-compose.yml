@@ -1,0 +1,29 @@
+services:
+  engine:
+    build: ./engine
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./local/data:/app/data
+      - ./local/config:/app/config
+    environment:
+      - NIMBUS_DATABASE_URL=sqlite:///data/nimbus.db
+      - NIMBUS_ENVIRONMENT=development
+      - NIMBUS_DEBUG=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ui:
+  #   build: ./ui
+  #   ports:
+  #     - "3000:80"
+  #   depends_on:
+  #     engine:
+  #       condition: service_healthy
+  #   environment:
+  #     - VITE_API_URL=http://localhost:8000
+  #   restart: unless-stopped
