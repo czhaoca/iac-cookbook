@@ -197,6 +197,13 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
   - [x] Audit log page with provider/action/limit filtering
   - [x] OCI live integration: 5/5 tests pass against real API
   - [x] Proxmox adapter: VMs + LXC, start/stop/health, node status, storage (12 tests)
+- [x] **Phase 10**: Proxmox provisioning, E2E Docker, multi-provider dashboard, DNS automation, budget cron, mobile responsive (124 tests)
+  - [x] Proxmox provisioning: VM creation (scratch/clone/cloud-init), LXC containers (17 tests)
+  - [x] E2E Docker test: deploy/test-e2e.sh — builds, tests 11 endpoints + UI proxy
+  - [x] Multi-provider dashboard: provider filter, per-provider resource counts
+  - [x] Cloudflare DNS: Fixed WAF methods, 12 unit tests, integration test fixes
+  - [x] Budget enforcement cron: scheduler with spending/budget/health loops
+  - [x] Mobile responsive: CSS breakpoints (480px/768px/1400px)
 
 ## Contributing
 
