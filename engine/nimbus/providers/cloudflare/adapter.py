@@ -232,7 +232,7 @@ class CloudflareAdapter(ProviderAdapter):
           - '(ip.src ne 1.2.3.4)' — block all except whitelist
           - '(http.request.uri.path contains "/admin")' — protect admin
         """
-        self._ensure_auth()
+        self._check_auth()
         ruleset = self._get_or_create_custom_ruleset(zone_id)
         if not ruleset:
             return {"success": False, "errors": [{"message": "Failed to get/create ruleset"}]}
@@ -246,16 +246,16 @@ class CloudflareAdapter(ProviderAdapter):
             }],
         }
         # Append rule to existing ruleset
-        result = self._api_request(
+        result = self._api(
+            "POST",
             f"/zones/{zone_id}/rulesets/{ruleset['id']}/rules",
-            method="POST",
             data=rule_data["rules"][0],
         )
         return result
 
     def list_firewall_rules(self, zone_id: str) -> list[dict]:
         """List all custom WAF rules for a zone."""
-        self._ensure_auth()
+        self._check_auth()
         ruleset = self._get_or_create_custom_ruleset(zone_id)
         if not ruleset:
             return []
@@ -263,13 +263,13 @@ class CloudflareAdapter(ProviderAdapter):
 
     def delete_firewall_rule(self, zone_id: str, rule_id: str) -> bool:
         """Delete a specific WAF rule."""
-        self._ensure_auth()
+        self._check_auth()
         ruleset = self._get_or_create_custom_ruleset(zone_id)
         if not ruleset:
             return False
-        result = self._api_request(
+        result = self._api(
+            "DELETE",
             f"/zones/{zone_id}/rulesets/{ruleset['id']}/rules/{rule_id}",
-            method="DELETE",
         )
         return result.get("success", False)
 
@@ -291,14 +291,18 @@ class CloudflareAdapter(ProviderAdapter):
 
     def _get_or_create_custom_ruleset(self, zone_id: str) -> dict | None:
         """Get the custom phase ruleset, or return None if unavailable."""
-        self._ensure_auth()
-        result = self._api_request(f"/zones/{zone_id}/rulesets")
+        self._check_auth()
+        result = self._api("GET", f"/zones/{zone_id}/rulesets")
         if not result.get("success"):
             return None
         rulesets = result.get("result", [])
         for rs in rulesets:
             if rs.get("phase") == "http_request_firewall_custom":
-                # Fetch full ruleset with rules
-                full = self._api_request(f"/zones/{zone_id}/rulesets/{rs['id']}")
+                full = self._api("GET", f"/zones/{zone_id}/rulesets/{rs['id']}")
                 return full.get("result", rs)
         return None
+
+    def _check_auth(self) -> None:
+        """Ensure authenticated before API calls."""
+        if not self._token:
+            raise RuntimeError("Not authenticated — call authenticate() first")

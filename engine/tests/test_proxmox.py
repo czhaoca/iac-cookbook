@@ -131,3 +131,91 @@ class TestProxmoxAdapter:
         assert result[0]["storage"] == "local"
         assert result[0]["active"] is True
         assert result[0]["total_gb"] == 100.0
+
+    def test_provision_vm_from_scratch(self):
+        adapter = self._make_adapter()
+        calls = []
+        def mock_api(method, path, data=None):
+            calls.append((method, path))
+            if "nextid" in path:
+                return {"data": "105"}
+            return {"data": "UPID:pve:00001234"}
+        with patch.object(adapter, "_api", side_effect=mock_api):
+            result = adapter.provision("vm", {
+                "name": "test-vm",
+                "memory": 4096,
+                "cores": 4,
+                "storage": "local-lvm",
+                "disk_size": 64,
+            })
+        assert result["external_id"] == "105"
+        assert result["display_name"] == "test-vm"
+        assert result["resource_type"] == "vm"
+
+    def test_provision_vm_clone(self):
+        adapter = self._make_adapter()
+        calls = []
+        def mock_api(method, path, data=None):
+            calls.append((method, path))
+            if "nextid" in path:
+                return {"data": "106"}
+            return {"data": "UPID:pve:clone"}
+        with patch.object(adapter, "_api", side_effect=mock_api):
+            result = adapter.provision("vm", {
+                "name": "cloned-vm",
+                "clone": 9000,
+            })
+        assert result["external_id"] == "106"
+        # Should have called clone endpoint
+        assert any("clone" in p for _, p in calls)
+
+    def test_provision_vm_cloud_init(self):
+        adapter = self._make_adapter()
+        calls = []
+        def mock_api(method, path, data=None):
+            calls.append((method, path, data))
+            if "nextid" in path:
+                return {"data": "107"}
+            return {"data": "UPID:ok"}
+        with patch.object(adapter, "_api", side_effect=mock_api):
+            adapter.provision("vm", {
+                "name": "ci-vm",
+                "cloud_init": True,
+                "ci_user": "admin",
+                "ci_ip": "ip=10.0.0.5/24,gw=10.0.0.1",
+                "start": True,
+            })
+        # Should have config PUT for cloud-init and start POST
+        methods = [(m, p) for m, p, _ in calls]
+        assert any(m == "PUT" and "config" in p for m, p in methods)
+        assert any("start" in p for _, p in methods)
+
+    def test_provision_container(self):
+        adapter = self._make_adapter()
+        def mock_api(method, path, data=None):
+            if "nextid" in path:
+                return {"data": "200"}
+            return {"data": "UPID:pve:ct"}
+        with patch.object(adapter, "_api", side_effect=mock_api):
+            result = adapter.provision("container", {
+                "hostname": "nginx-ct",
+                "ostemplate": "local:vztmpl/ubuntu-22.04.tar.zst",
+                "memory": 1024,
+                "start": True,
+            })
+        assert result["external_id"] == "200"
+        assert result["resource_type"] == "container"
+        assert result["status"] == "running"
+
+    def test_provision_vm_failure(self):
+        adapter = self._make_adapter()
+        def mock_api(method, path, data=None):
+            if "nextid" in path:
+                return {"data": "108"}
+            return {"data": None, "errors": "insufficient resources"}
+        with patch.object(adapter, "_api", side_effect=mock_api):
+            try:
+                adapter.provision("vm", {"name": "fail-vm"})
+                assert False, "Should have raised"
+            except RuntimeError as e:
+                assert "insufficient resources" in str(e)

@@ -118,24 +118,39 @@ class TestCloudflareIntegration:
     def setup(self):
         from nimbus.providers.cloudflare.adapter import CloudflareAdapter
 
-        self.adapter = CloudflareAdapter(
-            provider_id="test-cf",
-            credentials_path=_cf_token,
-        )
+        self.adapter = CloudflareAdapter()
+        self._creds_path = _cf_token
 
     def test_authenticate(self):
-        result = self.adapter.authenticate()
-        assert result is True
+        self.adapter.authenticate(self._creds_path)
+        assert self.adapter._token is not None
 
     def test_list_zones(self):
-        self.adapter.authenticate()
+        self.adapter.authenticate(self._creds_path)
         resources = self.adapter.list_resources("zone")
+        assert isinstance(resources, list)
+        for z in resources:
+            assert z["resource_type"] == "zone"
+            assert "external_id" in z
+
+    def test_list_dns_records(self):
+        self.adapter.authenticate(self._creds_path)
+        resources = self.adapter.list_resources("dns_record")
         assert isinstance(resources, list)
 
     def test_health_check(self):
-        self.adapter.authenticate()
-        health = self.adapter.health_check()
-        assert health["status"] in ("ok", "healthy", "degraded", "unknown")
+        self.adapter.authenticate(self._creds_path)
+        zones = self.adapter.list_resources("zone")
+        if zones:
+            # Use first zone's dns records
+            records = self.adapter.list_resources("dns_record")
+            if records:
+                health = self.adapter.health_check(records[0]["external_id"])
+                assert health["status"] in ("healthy", "unhealthy")
+
+    def test_spending_zero(self):
+        self.adapter.authenticate(self._creds_path)
+        assert self.adapter.get_spending("2026-02") == 0.0
 
 
 # ---------------------------------------------------------------------------

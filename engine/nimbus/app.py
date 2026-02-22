@@ -17,11 +17,17 @@ async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
     init_db()
     _register_adapters()
-    # Start background spending sync
+    # Start background tasks
     from .services.spending_sync import spending_sync_loop
-    sync_task = asyncio.create_task(spending_sync_loop())
+    from .services.scheduler import budget_enforcement_loop, health_check_loop
+    tasks = [
+        asyncio.create_task(spending_sync_loop()),
+        asyncio.create_task(budget_enforcement_loop()),
+        asyncio.create_task(health_check_loop()),
+    ]
     yield
-    sync_task.cancel()
+    for t in tasks:
+        t.cancel()
 
 
 def create_app() -> FastAPI:

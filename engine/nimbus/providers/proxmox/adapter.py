@@ -113,7 +113,126 @@ class ProxmoxAdapter(ProviderAdapter):
         }
 
     def provision(self, resource_type: str, config: dict[str, Any]) -> dict[str, Any]:
-        raise NotImplementedError("Proxmox provisioning not yet implemented")
+        """Provision a new VM or container.
+
+        VM config keys:
+            vmid (optional), name, memory (MB), cores, sockets (default 1),
+            storage (default "local-lvm"), disk_size (GB, default 32),
+            iso (for CD install) or clone (template vmid to clone),
+            ostype (default "l26"), net (default "virtio,bridge=vmbr0"),
+            cloud_init: bool (default False) — if True, adds cloud-init drive
+              ci_user, ci_password, ci_sshkeys, ci_ip (DHCP or static)
+
+        Container config keys:
+            vmid (optional), hostname, memory (MB), cores,
+            storage (default "local-lvm"), rootfs_size (GB, default 8),
+            ostemplate (e.g. "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"),
+            net (default "name=eth0,bridge=vmbr0,ip=dhcp"),
+            password, ssh_keys
+        """
+        if resource_type in ("container", "lxc"):
+            return self._provision_container(config)
+        return self._provision_vm(config)
+
+    def _provision_vm(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Create a QEMU VM via Proxmox API."""
+        vmid = config.get("vmid") or self._next_vmid()
+        params: dict[str, Any] = {
+            "vmid": vmid,
+            "name": config.get("name", f"vm-{vmid}"),
+            "memory": config.get("memory", 2048),
+            "cores": config.get("cores", 2),
+            "sockets": config.get("sockets", 1),
+            "ostype": config.get("ostype", "l26"),
+            "net0": config.get("net", "virtio,bridge=vmbr0"),
+        }
+
+        storage = config.get("storage", "local-lvm")
+        disk_size = config.get("disk_size", 32)
+
+        if "clone" in config:
+            # Clone from template
+            resp = self._api("POST", f"/nodes/{self._node}/qemu/{config['clone']}/clone", {
+                "newid": vmid,
+                "name": params["name"],
+                "full": 1,
+                "storage": storage,
+            })
+        else:
+            # Create from scratch
+            params[f"scsi0"] = f"{storage}:{disk_size}"
+            params["scsihw"] = "virtio-scsi-single"
+            params["boot"] = "order=scsi0"
+            if "iso" in config:
+                params["cdrom"] = config["iso"]
+                params["boot"] = "order=ide2;scsi0"
+            resp = self._api("POST", f"/nodes/{self._node}/qemu", params)
+
+        if resp.get("data") is None and resp.get("errors"):
+            raise RuntimeError(f"VM provision failed: {resp['errors']}")
+
+        # Cloud-init configuration
+        if config.get("cloud_init"):
+            ci_params: dict[str, str] = {}
+            if "ci_user" in config:
+                ci_params["ciuser"] = config["ci_user"]
+            if "ci_password" in config:
+                ci_params["cipassword"] = config["ci_password"]
+            if "ci_sshkeys" in config:
+                ci_params["sshkeys"] = config["ci_sshkeys"]
+            ci_params["ipconfig0"] = config.get("ci_ip", "ip=dhcp")
+            ci_params["ide2"] = f"{storage}:cloudinit"
+            if ci_params:
+                self._api("PUT", f"/nodes/{self._node}/qemu/{vmid}/config", ci_params)
+
+        # Auto-start if requested
+        if config.get("start", False):
+            self._api("POST", f"/nodes/{self._node}/qemu/{vmid}/status/start")
+
+        return {
+            "external_id": str(vmid),
+            "resource_type": "vm",
+            "display_name": params["name"],
+            "status": "running" if config.get("start") else "stopped",
+        }
+
+    def _provision_container(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Create an LXC container via Proxmox API."""
+        vmid = config.get("vmid") or self._next_vmid()
+        storage = config.get("storage", "local-lvm")
+        rootfs_size = config.get("rootfs_size", 8)
+
+        params: dict[str, Any] = {
+            "vmid": vmid,
+            "hostname": config.get("hostname", f"ct-{vmid}"),
+            "memory": config.get("memory", 512),
+            "cores": config.get("cores", 1),
+            "ostemplate": config["ostemplate"],
+            "rootfs": f"{storage}:{rootfs_size}",
+            "net0": config.get("net", "name=eth0,bridge=vmbr0,ip=dhcp"),
+            "unprivileged": config.get("unprivileged", 1),
+            "start": 1 if config.get("start", False) else 0,
+        }
+        if "password" in config:
+            params["password"] = config["password"]
+        if "ssh_keys" in config:
+            params["ssh-public-keys"] = config["ssh_keys"]
+
+        resp = self._api("POST", f"/nodes/{self._node}/lxc", params)
+        if resp.get("data") is None and resp.get("errors"):
+            raise RuntimeError(f"Container provision failed: {resp['errors']}")
+
+        return {
+            "external_id": str(vmid),
+            "resource_type": "container",
+            "display_name": params["hostname"],
+            "status": "running" if config.get("start") else "stopped",
+        }
+
+    def _next_vmid(self) -> int:
+        """Get next available VMID from Proxmox cluster."""
+        resp = self._api("GET", "/cluster/nextid")
+        return int(resp.get("data", 100))
 
     def terminate(self, resource_id: str) -> bool:
         """Stop and destroy a VM."""

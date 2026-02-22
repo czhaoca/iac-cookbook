@@ -6,6 +6,7 @@ import { ToastContainer } from "@/components/Toasts";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { setAuthToken } from "@/api/client";
 import "./App.css";
+import "./responsive.css";
 
 const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const ResourceDetail = lazy(() => import("@/pages/ResourceDetail").then((m) => ({ default: m.ResourceDetail })));

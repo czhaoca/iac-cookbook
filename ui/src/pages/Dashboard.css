@@ -107,6 +107,38 @@
   right: 0.5rem;
 }
 
+.provider-card-wrapper {
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+
+.provider-card-wrapper:hover {
+  border-color: #334155;
+}
+
+.provider-active-filter {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
+.provider-resource-counts {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  color: #64748b;
+  padding: 0.25rem 0.75rem 0.5rem;
+}
+
+.count-running { color: #4ade80; }
+.count-stopped { color: #facc15; }
+
+.filter-clear {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+}
+
 .resource-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

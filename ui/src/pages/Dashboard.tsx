@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useProviders, useResources, useResourceAction, useSyncResources, useBudgetStatus, useEnforceBudget, useSpending } from "@/hooks/useApi";
 import { ProviderBadge } from "@/components/ProviderBadge";
 import { ProviderForm, ProviderDeleteButton } from "@/components/ProviderForm";
@@ -14,6 +14,7 @@ export function Dashboard() {
   const [showProviderForm, setShowProviderForm] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ id: string; action: ResourceAction; name: string } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [providerFilter, setProviderFilter] = useState<string | null>(null);
   const { data: providers = [], isLoading: loadingProviders } = useProviders();
   const { data: resources = [], isLoading: loadingResources } = useResources();
   const actionMut = useResourceAction();
@@ -21,6 +22,23 @@ export function Dashboard() {
   const { data: budgetStatuses = [] } = useBudgetStatus();
   const { data: spending = [] } = useSpending();
   const enforceMut = useEnforceBudget();
+
+  const filteredResources = useMemo(
+    () => providerFilter ? resources.filter((r) => r.provider_id === providerFilter) : resources,
+    [resources, providerFilter],
+  );
+
+  const providerStats = useMemo(() => {
+    const stats: Record<string, { total: number; running: number; stopped: number }> = {};
+    for (const r of resources) {
+      const pid = r.provider_id;
+      if (!stats[pid]) stats[pid] = { total: 0, running: 0, stopped: 0 };
+      stats[pid].total++;
+      if (r.status === "running") stats[pid].running++;
+      if (r.status === "stopped") stats[pid].stopped++;
+    }
+    return stats;
+  }, [resources]);
 
   const destructiveActions = new Set<ResourceAction>(["stop", "terminate"]);
 
@@ -61,10 +79,10 @@ export function Dashboard() {
   };
 
   const toggleSelectAll = () => {
-    if (selected.size === resources.length) {
+    if (selected.size === filteredResources.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(resources.map((r) => r.id)));
+      setSelected(new Set(filteredResources.map((r) => r.id)));
     }
   };
 
@@ -133,17 +151,38 @@ export function Dashboard() {
           </p>
         ) : (
           <div className="provider-grid">
-            {providers.map((p) => (
-              <div key={p.id} className="provider-card-wrapper">
-                <ProviderBadge
-                  provider={p}
-                  onSync={handleSync}
-                  syncing={syncMut.isPending}
-                />
-                <ProviderDeleteButton providerId={p.id} />
-              </div>
-            ))}
+            {providers.map((p) => {
+              const stats = providerStats[p.id];
+              return (
+                <div
+                  key={p.id}
+                  className={`provider-card-wrapper${providerFilter === p.id ? " provider-active-filter" : ""}`}
+                  onClick={() => setProviderFilter(providerFilter === p.id ? null : p.id)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <ProviderBadge
+                    provider={p}
+                    onSync={handleSync}
+                    syncing={syncMut.isPending}
+                  />
+                  {stats && (
+                    <div className="provider-resource-counts">
+                      <span>{stats.total} resources</span>
+                      <span className="count-running">{stats.running} running</span>
+                      <span className="count-stopped">{stats.stopped} stopped</span>
+                    </div>
+                  )}
+                  <ProviderDeleteButton providerId={p.id} />
+                </div>
+              );
+            })}
           </div>
+        )}
+        {providerFilter && (
+          <button className="btn-sm btn-secondary filter-clear" onClick={() => setProviderFilter(null)}>
+            Clear filter: {providers.find((p) => p.id === providerFilter)?.display_name ?? providerFilter}
+          </button>
         )}
         {syncMut.isSuccess && (
           <p className="success-text">
@@ -167,11 +206,13 @@ export function Dashboard() {
       {/* Resources */}
       <section className="section">
         <div className="section-header">
-          <h2 className="section-title">Resources</h2>
-          {resources.length > 0 && (
+          <h2 className="section-title">
+            Resources{providerFilter ? ` — ${providers.find((p) => p.id === providerFilter)?.display_name ?? providerFilter}` : ""}
+          </h2>
+          {filteredResources.length > 0 && (
             <div className="bulk-actions">
               <label className="bulk-select-all">
-                <input type="checkbox" checked={selected.size === resources.length && resources.length > 0} onChange={toggleSelectAll} />
+                <input type="checkbox" checked={selected.size === filteredResources.length && filteredResources.length > 0} onChange={toggleSelectAll} />
                 Select all
               </label>
               {selected.size > 0 && (
@@ -186,11 +227,11 @@ export function Dashboard() {
         </div>
         {loadingResources ? (
           <p className="loading-text">Loading resources…</p>
-        ) : resources.length === 0 ? (
-          <p className="empty-text">No resources tracked yet. Sync a provider to get started.</p>
+        ) : filteredResources.length === 0 ? (
+          <p className="empty-text">{providerFilter ? "No resources for this provider." : "No resources tracked yet. Sync a provider to get started."}</p>
         ) : (
           <div className="resource-grid">
-            {resources.map((r) => (
+            {filteredResources.map((r) => (
               <ResourceCard
                 key={r.id}
                 resource={r}

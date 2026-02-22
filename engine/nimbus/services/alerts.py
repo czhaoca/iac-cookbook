@@ -114,3 +114,24 @@ def dispatch_alert(
         results["email"] = {"success": ok, "recipients": config.email_to}
 
     return results
+
+
+def send_alert(level: str, message: str, db: Any = None) -> None:
+    """High-level alert dispatcher — loads config and sends to all destinations.
+
+    Args:
+        level: "info", "warning", or "critical"
+        message: Alert message text
+        db: Optional DB session (for future DB-stored config)
+    """
+    from pathlib import Path
+
+    config_path = Path(__file__).parent.parent.parent.parent / "local" / "config" / "alerts.json"
+    config = AlertConfig.from_file(str(config_path))
+
+    if not config.webhooks and not config.email_to:
+        logger.debug("No alert destinations configured — skipping alert: %s", message)
+        return
+
+    alert_type = f"budget_{level}" if "budget" in message.lower() else f"system_{level}"
+    dispatch_alert(config, alert_type, message)

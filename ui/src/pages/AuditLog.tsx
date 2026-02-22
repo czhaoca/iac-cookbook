@@ -45,6 +45,7 @@ export function AuditLog() {
       ) : logs.length === 0 ? (
         <p className="empty-text">No audit entries found.</p>
       ) : (
+        <div className="audit-table-wrapper">
         <table className="audit-table">
           <thead>
             <tr>
@@ -69,6 +70,7 @@ export function AuditLog() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </main>
   );

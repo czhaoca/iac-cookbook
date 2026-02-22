@@ -1,0 +1,235 @@
+/* Mobile-responsive breakpoints for Nimbus UI */
+
+/* ── Tablet (≤ 768px) ──────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .dashboard {
+    padding: 1rem;
+  }
+
+  .stats-bar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .stat {
+    flex: 1 1 calc(50% - 0.25rem);
+    min-width: 0;
+    padding: 0.75rem;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
+
+  .provider-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .resource-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .budget-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .bulk-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  /* Header */
+  .header {
+    padding: 0.5rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .header-title {
+    font-size: 1rem;
+  }
+
+  .header-version {
+    display: none;
+  }
+
+  .header-right {
+    gap: 0.75rem;
+  }
+
+  /* Settings page */
+  .settings-page {
+    padding: 1rem;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Audit log */
+  .audit-page {
+    padding: 1rem;
+  }
+
+  .audit-filters {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .audit-table {
+    font-size: 0.75rem;
+  }
+
+  .audit-table th,
+  .audit-table td {
+    padding: 0.5rem 0.35rem;
+  }
+
+  /* Spending chart */
+  .spending-chart-container {
+    overflow-x: auto;
+  }
+
+  /* Confirm modal */
+  .confirm-modal-content {
+    margin: 1rem;
+    max-width: calc(100vw - 2rem);
+  }
+}
+
+/* ── Phone (≤ 480px) ──────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .dashboard {
+    padding: 0.5rem;
+  }
+
+  .stat {
+    flex: 1 1 100%;
+  }
+
+  .stat-value {
+    font-size: 1.25rem;
+  }
+
+  .stat-label {
+    font-size: 0.65rem;
+  }
+
+  .section-title {
+    font-size: 0.85rem;
+  }
+
+  /* Header — stack logo and nav */
+  .header {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .header-left {
+    gap: 0.35rem;
+  }
+
+  .header-title {
+    font-size: 0.9rem;
+  }
+
+  .header-right {
+    gap: 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .engine-status {
+    font-size: 0.7rem;
+  }
+
+  /* Cards */
+  .resource-card {
+    padding: 0.75rem;
+  }
+
+  .card-name {
+    font-size: 0.9rem;
+  }
+
+  .card-actions {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+  }
+
+  /* Provider badge */
+  .provider-badge {
+    padding: 0.4rem 0.6rem;
+  }
+
+  .badge-name {
+    font-size: 0.8rem;
+  }
+
+  /* Budget */
+  .budget-card {
+    padding: 0.75rem;
+  }
+
+  .budget-spent {
+    font-size: 1rem;
+  }
+
+  /* Audit table — scroll horizontally */
+  .audit-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .audit-table {
+    min-width: 500px;
+    font-size: 0.7rem;
+  }
+
+  /* Resource detail */
+  .resource-detail {
+    padding: 0.75rem;
+  }
+
+  /* Login */
+  .login-card {
+    margin: 1rem;
+    padding: 1.5rem;
+  }
+
+  /* Toasts */
+  .toasts-container {
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 0.5rem;
+  }
+
+  .toast {
+    font-size: 0.8rem;
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+/* ── Large screens (≥ 1400px) ─────────────────────────────────── */
+@media (min-width: 1400px) {
+  .dashboard {
+    max-width: 1400px;
+  }
+
+  .resource-grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+
+  .provider-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
