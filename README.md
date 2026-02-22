@@ -190,6 +190,13 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
   - [x] Deploy tooling: wait-healthy.sh, checklist, docker-compose validation
   - [x] Alembic migration 002 (settings table)
   - [x] API key auth middleware + login page
+- [x] **Phase 9**: Code splitting, action modals, audit log, Proxmox adapter (107 tests)
+  - [x] Code splitting: React.lazy + Suspense (bundle 638KB → 274KB)
+  - [x] Resource actions: ConfirmModal, bulk select/actions on Dashboard
+  - [x] Notification preferences: webhook/email/SMTP config on Settings
+  - [x] Audit log page with provider/action/limit filtering
+  - [x] OCI live integration: 5/5 tests pass against real API
+  - [x] Proxmox adapter: VMs + LXC, start/stop/health, node status, storage (12 tests)
 
 ## Contributing
 
