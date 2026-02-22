@@ -1,4 +1,5 @@
 import { RefreshCw, Shield, ShieldAlert, ShieldOff } from "lucide-react";
+import { Link } from "react-router-dom";
 import type { Resource, ResourceAction } from "@/types";
 import "./ResourceCard.css";
 
@@ -34,7 +35,9 @@ export function ResourceCard({ resource, onAction, actionPending }: Props) {
         </span>
       </div>
 
-      <h3 className="card-name">{resource.display_name || resource.external_id}</h3>
+      <Link to={`/resource/${resource.id}`} className="card-name-link">
+        <h3 className="card-name">{resource.display_name || resource.external_id}</h3>
+      </Link>
 
       <div className="card-meta">
         <span className="card-provider">{resource.provider_id}</span>

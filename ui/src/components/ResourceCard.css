@@ -110,3 +110,11 @@
   border-color: #64748b;
   color: #94a3b8;
 }
+
+.card-name-link {
+  text-decoration: none;
+  color: inherit;
+}
+.card-name-link:hover .card-name {
+  color: #60a5fa;
+}

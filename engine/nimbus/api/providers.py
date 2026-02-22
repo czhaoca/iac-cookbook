@@ -60,3 +60,10 @@ def delete_provider(provider_id: str, db: Session = Depends(get_db)):
     if not registry.delete_provider(db, provider_id):
         raise HTTPException(status_code=404, detail=f"Provider '{provider_id}' not found")
     registry.clear_cache(provider_id)
+
+
+@router.get("/health/check")
+def provider_health_check(provider_id: str | None = None, db: Session = Depends(get_db)):
+    """Check health and latency of registered providers."""
+    from ..services.health import check_provider_health
+    return check_provider_health(db, provider_id)

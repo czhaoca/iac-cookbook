@@ -94,3 +94,12 @@ export interface BudgetStatus {
 }
 
 export type ResourceAction = "stop" | "start" | "terminate" | "health_check";
+
+export interface ActionLogEntry {
+  id: string;
+  action_type: string;
+  status: string;
+  details: Record<string, unknown>;
+  initiated_by: string;
+  created_at: string | null;
+}

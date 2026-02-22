@@ -204,3 +204,38 @@ def sync_resources(provider_id: str, db: Session = Depends(get_db)):
 
     db.commit()
     return result
+
+
+# ---------------------------------------------------------------------------
+# Action logs
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{resource_id}/logs")
+def get_action_logs(
+    resource_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """Get action history for a resource."""
+    resource = db.get(CloudResource, resource_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    logs = (
+        db.query(ActionLog)
+        .filter(ActionLog.resource_id == resource_id)
+        .order_by(ActionLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": log.id,
+            "action_type": log.action_type,
+            "status": log.status,
+            "details": log.details,
+            "initiated_by": log.initiated_by,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        }
+        for log in logs
+    ]

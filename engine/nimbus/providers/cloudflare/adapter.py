@@ -215,3 +215,90 @@ class CloudflareAdapter(ProviderAdapter):
                 return json.loads(error_body)
             except Exception:
                 return {"success": False, "errors": [{"message": error_body}]}
+
+    # -------------------------------------------------------------------
+    # WAF / Firewall rules
+    # -------------------------------------------------------------------
+
+    def create_firewall_rule(
+        self, zone_id: str, expression: str, action: str = "block",
+        description: str = "Nimbus budget lockdown",
+    ) -> dict:
+        """Create a WAF custom rule (Cloudflare Rulesets API).
+
+        Docs: https://developers.cloudflare.com/waf/custom-rules/create-api/
+        Actions: block, challenge, js_challenge, managed_challenge, log
+        Expression examples:
+          - '(ip.src ne 1.2.3.4)' — block all except whitelist
+          - '(http.request.uri.path contains "/admin")' — protect admin
+        """
+        self._ensure_auth()
+        ruleset = self._get_or_create_custom_ruleset(zone_id)
+        if not ruleset:
+            return {"success": False, "errors": [{"message": "Failed to get/create ruleset"}]}
+
+        rule_data = {
+            "rules": [{
+                "expression": expression,
+                "action": action,
+                "description": description,
+                "enabled": True,
+            }],
+        }
+        # Append rule to existing ruleset
+        result = self._api_request(
+            f"/zones/{zone_id}/rulesets/{ruleset['id']}/rules",
+            method="POST",
+            data=rule_data["rules"][0],
+        )
+        return result
+
+    def list_firewall_rules(self, zone_id: str) -> list[dict]:
+        """List all custom WAF rules for a zone."""
+        self._ensure_auth()
+        ruleset = self._get_or_create_custom_ruleset(zone_id)
+        if not ruleset:
+            return []
+        return ruleset.get("rules", [])
+
+    def delete_firewall_rule(self, zone_id: str, rule_id: str) -> bool:
+        """Delete a specific WAF rule."""
+        self._ensure_auth()
+        ruleset = self._get_or_create_custom_ruleset(zone_id)
+        if not ruleset:
+            return False
+        result = self._api_request(
+            f"/zones/{zone_id}/rulesets/{ruleset['id']}/rules/{rule_id}",
+            method="DELETE",
+        )
+        return result.get("success", False)
+
+    def lockdown_zone(self, zone_id: str, whitelist_ips: list[str] | None = None) -> dict:
+        """Emergency lockdown — block all traffic except whitelisted IPs.
+
+        Used by budget enforcement to stop serving when costs are exceeded.
+        """
+        if whitelist_ips:
+            ip_expr = " or ".join(f'ip.src eq {ip}' for ip in whitelist_ips)
+            expression = f"(not ({ip_expr}))"
+        else:
+            expression = "(true)"  # Block everything
+
+        return self.create_firewall_rule(
+            zone_id, expression, action="block",
+            description="Nimbus emergency budget lockdown",
+        )
+
+    def _get_or_create_custom_ruleset(self, zone_id: str) -> dict | None:
+        """Get the custom phase ruleset, or return None if unavailable."""
+        self._ensure_auth()
+        result = self._api_request(f"/zones/{zone_id}/rulesets")
+        if not result.get("success"):
+            return None
+        rulesets = result.get("result", [])
+        for rs in rulesets:
+            if rs.get("phase") == "http_request_firewall_custom":
+                # Fetch full ruleset with rules
+                full = self._api_request(f"/zones/{zone_id}/rulesets/{rs['id']}")
+                return full.get("result", rs)
+        return None

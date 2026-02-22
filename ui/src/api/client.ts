@@ -10,6 +10,7 @@ import type {
   BudgetRuleCreate,
   BudgetStatus,
   SpendingRecord,
+  ActionLogEntry,
 } from "@/types";
 
 const BASE = "/api";
@@ -87,3 +88,7 @@ export const orchestrateLockdown = (providerId: string) =>
     "/orchestrate/lockdown",
     { method: "POST", body: JSON.stringify({ provider_id: providerId }) },
   );
+
+// Action Logs
+export const getActionLogs = (resourceId: string) =>
+  request<ActionLogEntry[]>(`/resources/${resourceId}/logs`);
