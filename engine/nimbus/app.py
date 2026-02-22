@@ -43,11 +43,15 @@ def create_app() -> FastAPI:
     from .api.resources import router as resources_router
     from .api.budget import router as budget_router
     from .api.orchestration import router as orchestration_router
+    from .api.ws import router as ws_router
+    from .api.backup import router as backup_router
     app.include_router(health_router)
     app.include_router(providers_router, prefix="/api")
     app.include_router(resources_router, prefix="/api")
     app.include_router(budget_router, prefix="/api")
     app.include_router(orchestration_router, prefix="/api")
+    app.include_router(ws_router)
+    app.include_router(backup_router, prefix="/api")
 
     return app
 

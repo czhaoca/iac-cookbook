@@ -322,5 +322,55 @@ def budget_add(provider_id: str | None, monthly_limit: float, alert_threshold: f
         db.close()
 
 
+# ---------------------------------------------------------------------------
+# Backup commands
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def backup():
+    """Database backup management."""
+    pass
+
+
+@backup.command("create")
+def backup_create():
+    """Create a database backup with automatic rotation."""
+    from ..services.backup import backup_database
+    result = backup_database()
+    if "error" in result:
+        click.echo(f"✗ {result['error']}", err=True)
+        raise SystemExit(1)
+    click.echo(f"✔ Backup created: {result['path']} ({result['size_bytes']} bytes)")
+    if result.get("rotated_out"):
+        click.echo(f"  Rotated out: {', '.join(result['rotated_out'])}")
+    click.echo(f"  Total backups: {result['total_backups']}")
+
+
+@backup.command("list")
+def backup_list():
+    """List existing database backups."""
+    from rich.console import Console
+    from rich.table import Table
+    from ..services.backup import list_backups
+
+    backups = list_backups()
+    if not backups:
+        click.echo("No backups found.")
+        return
+
+    console = Console()
+    table = Table(title="Database Backups")
+    table.add_column("Name")
+    table.add_column("Size", justify="right")
+    table.add_column("Created")
+
+    for b in backups:
+        size_kb = b["size_bytes"] / 1024
+        table.add_row(b["name"], f"{size_kb:.1f} KB", b["created"])
+
+    console.print(table)
+
+
 if __name__ == "__main__":
     cli()
