@@ -133,6 +133,7 @@ Before wrapping up ANY session, the AI MUST interactively discuss:
 2. **What's blocked** — any blockers or decisions needed
 3. **What's next** — top 3 priorities for the next session
 4. **Realignment** — ask the user if priorities should change
+5. **CI/CD Gate** — After pushing, wait for GitHub Actions to complete. If any workflow fails, debug and fix until all checks pass. Do NOT summarize the scrum until CI is green.
 
 This is mandatory. Do NOT end a session without this recap.
 

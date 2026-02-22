@@ -58,7 +58,7 @@ jobs:
         run: |
           pip install pip-audit
           pip install -e ".[dev]" 2>/dev/null || pip install -e .
-          pip-audit --strict --desc
+          pip-audit --strict --desc --skip-editable
 
       - name: Audit npm dependencies
         working-directory: ui
