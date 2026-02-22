@@ -160,22 +160,22 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
   - [x] CLI enhancements (status, providers, resources)
   - [x] Alembic migrations
   - [x] 36 passing tests (API, services, OCI modules)
-- [ ] **Phase 2**: React + Vite frontend, dashboard, resource cards
+- [x] **Phase 2**: React + Vite frontend, dashboard, resource cards
   - [x] GitHub Actions CI + security scanning (CodeQL, Dependabot, npm/pip audit)
   - [x] Vite 7 + React 19 scaffold (0 CVEs)
   - [x] Dashboard with stats bar, provider badges, resource cards
   - [x] TypeScript API client + TanStack React Query hooks
-  - [ ] WebSocket real-time updates
-  - [ ] Provider add/edit forms
-- [ ] **Phase 3**: Budget monitoring, spending alerts, auto-enforcement
+  - [x] WebSocket real-time updates
+  - [x] Provider add/edit forms
+- [x] **Phase 3**: Budget monitoring, spending alerts, auto-enforcement
   - [x] Budget rules CRUD API + CLI
   - [x] Budget monitor service (check/enforce/record)
   - [x] BudgetOverview dashboard component
-  - [x] 15 budget tests (51 total)
-  - [ ] Spending sync from provider APIs (cron)
-  - [ ] Webhook/email alert dispatch
+  - [x] Spending sync from provider APIs (background task)
+  - [x] Webhook/email alert dispatch
 - [x] **Phase 4**: Cloudflare + Proxmox adapters, cross-cloud workflows
 - [x] **Phase 5**: Docker production config, HA/DR, database backup
+- [x] **Phase 6**: Spending sync, alerts, provider forms, cloud stubs, Postgres path
 
 ## Contributing
 
