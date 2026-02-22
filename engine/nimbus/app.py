@@ -56,6 +56,7 @@ def create_app() -> FastAPI:
     from .api.backup import router as backup_router
     from .api.alerts import router as alerts_router
     from .api.settings import router as settings_router
+    from .api.audit import router as audit_router
     app.include_router(health_router)
     app.include_router(providers_router, prefix="/api")
     app.include_router(resources_router, prefix="/api")
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(backup_router, prefix="/api")
     app.include_router(alerts_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
+    app.include_router(audit_router, prefix="/api")
 
     return app
 

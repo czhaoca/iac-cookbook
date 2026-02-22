@@ -64,22 +64,42 @@ class ProxmoxAdapter(ProviderAdapter):
         logger.info("Proxmox authenticated: %s v%s", self._base_url, resp.get("data", {}).get("version", "?"))
 
     def list_resources(self, resource_type: str | None = None) -> list[dict[str, Any]]:
-        """List VMs (qemu) on the configured node."""
+        """List VMs (qemu) and containers (lxc) on the configured node."""
         resources: list[dict[str, Any]] = []
-        resp = self._api("GET", f"/nodes/{self._node}/qemu")
-        for vm in resp.get("data", []):
-            resources.append({
-                "external_id": str(vm["vmid"]),
-                "resource_type": "vm",
-                "display_name": vm.get("name", f"VM-{vm['vmid']}"),
-                "status": vm.get("status", "unknown"),
-                "tags": {
-                    "vmid": str(vm["vmid"]),
-                    "cpus": str(vm.get("cpus", 0)),
-                    "maxmem": str(vm.get("maxmem", 0)),
-                    "maxdisk": str(vm.get("maxdisk", 0)),
-                },
-            })
+
+        if resource_type is None or resource_type in ("vm", "qemu"):
+            resp = self._api("GET", f"/nodes/{self._node}/qemu")
+            for vm in resp.get("data", []):
+                resources.append({
+                    "external_id": str(vm["vmid"]),
+                    "resource_type": "vm",
+                    "display_name": vm.get("name", f"VM-{vm['vmid']}"),
+                    "status": vm.get("status", "unknown"),
+                    "tags": {
+                        "vmid": str(vm["vmid"]),
+                        "cpus": str(vm.get("cpus", 0)),
+                        "maxmem": str(vm.get("maxmem", 0)),
+                        "maxdisk": str(vm.get("maxdisk", 0)),
+                        "uptime": str(vm.get("uptime", 0)),
+                    },
+                })
+
+        if resource_type is None or resource_type in ("container", "lxc"):
+            resp = self._api("GET", f"/nodes/{self._node}/lxc")
+            for ct in resp.get("data", []):
+                resources.append({
+                    "external_id": str(ct["vmid"]),
+                    "resource_type": "container",
+                    "display_name": ct.get("name", f"CT-{ct['vmid']}"),
+                    "status": ct.get("status", "unknown"),
+                    "tags": {
+                        "vmid": str(ct["vmid"]),
+                        "cpus": str(ct.get("cpus", 0)),
+                        "maxmem": str(ct.get("maxmem", 0)),
+                        "maxdisk": str(ct.get("maxdisk", 0)),
+                    },
+                })
+
         return resources
 
     def get_resource(self, resource_id: str) -> dict[str, Any]:
@@ -109,12 +129,48 @@ class ProxmoxAdapter(ProviderAdapter):
         resp = self._api("POST", f"/nodes/{self._node}/qemu/{resource_id}/status/shutdown")
         return resp.get("data") is not None
 
+    def start(self, resource_id: str) -> bool:
+        """Start a VM."""
+        resp = self._api("POST", f"/nodes/{self._node}/qemu/{resource_id}/status/start")
+        return resp.get("data") is not None
+
     def health_check(self, resource_id: str) -> dict[str, Any]:
         try:
             result = self.get_resource(resource_id)
             return {"status": result.get("status", "unknown"), "resource_id": resource_id}
         except Exception as e:
             return {"status": "error", "resource_id": resource_id, "error": str(e)}
+
+    def get_node_status(self) -> dict[str, Any]:
+        """Get node resource usage (CPU, memory, storage)."""
+        resp = self._api("GET", f"/nodes/{self._node}/status")
+        data = resp.get("data", {})
+        mem = data.get("memory", {})
+        cpu_info = data.get("cpuinfo", {})
+        return {
+            "node": self._node,
+            "uptime": data.get("uptime", 0),
+            "cpu_cores": cpu_info.get("cores", 0) * cpu_info.get("sockets", 1),
+            "cpu_usage": round(data.get("cpu", 0) * 100, 1),
+            "memory_total_gb": round(mem.get("total", 0) / (1024 ** 3), 2),
+            "memory_used_gb": round(mem.get("used", 0) / (1024 ** 3), 2),
+            "memory_usage_pct": round(mem.get("used", 0) / max(mem.get("total", 1), 1) * 100, 1),
+        }
+
+    def list_storage(self) -> list[dict[str, Any]]:
+        """List storage pools on the node."""
+        resp = self._api("GET", f"/nodes/{self._node}/storage")
+        return [
+            {
+                "storage": s.get("storage", ""),
+                "type": s.get("type", ""),
+                "total_gb": round(s.get("total", 0) / (1024 ** 3), 2),
+                "used_gb": round(s.get("used", 0) / (1024 ** 3), 2),
+                "avail_gb": round(s.get("avail", 0) / (1024 ** 3), 2),
+                "active": s.get("active", 0) == 1,
+            }
+            for s in resp.get("data", [])
+        ]
 
     def _api(self, method: str, path: str, data: dict | None = None) -> dict:
         """Make an authenticated Proxmox API request."""

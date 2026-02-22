@@ -104,6 +104,20 @@ export const orchestrateLockdown = (providerId: string) =>
 export const getActionLogs = (resourceId: string) =>
   request<ActionLogEntry[]>(`/resources/${resourceId}/logs`);
 
+// Audit Log (global)
+export const getAuditLogs = (params?: {
+  provider_id?: string;
+  action_type?: string;
+  limit?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.provider_id) qs.set("provider_id", params.provider_id);
+  if (params?.action_type) qs.set("action_type", params.action_type);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const q = qs.toString();
+  return request<ActionLogEntry[]>(`/audit${q ? `?${q}` : ""}`);
+};
+
 // Settings
 export const getSettings = () =>
   request<Record<string, string>>("/settings");
@@ -116,3 +130,20 @@ export const updateSetting = (key: string, value: string) =>
 // Spending
 export const syncSpending = () =>
   request<{ synced: number }>("/budget/sync-spending", { method: "POST" });
+
+// Alert Config
+export interface AlertConfigData {
+  webhooks: string[];
+  email_to: string[];
+  email_from: string;
+  smtp_host: string;
+  smtp_port: number;
+}
+export const getAlertConfig = () => request<AlertConfigData>("/alerts/config");
+export const updateAlertConfig = (data: AlertConfigData) =>
+  request<AlertConfigData>("/alerts/config", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+export const testAlert = () =>
+  request<Record<string, unknown>>("/alerts/test", { method: "POST", body: JSON.stringify({}) });

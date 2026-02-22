@@ -1,15 +1,17 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Header } from "@/components/Header";
-import { Dashboard } from "@/pages/Dashboard";
-import { ResourceDetail } from "@/pages/ResourceDetail";
-import { Settings } from "@/pages/Settings";
-import { Login } from "@/pages/Login";
 import { ToastContainer } from "@/components/Toasts";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { setAuthToken } from "@/api/client";
 import "./App.css";
+
+const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const ResourceDetail = lazy(() => import("@/pages/ResourceDetail").then((m) => ({ default: m.ResourceDetail })));
+const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
+const AuditLog = lazy(() => import("@/pages/AuditLog").then((m) => ({ default: m.AuditLog })));
+const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,16 +22,23 @@ const queryClient = new QueryClient({
   },
 });
 
+function PageLoader() {
+  return <div className="page-loader">Loading…</div>;
+}
+
 function AppInner() {
   useWebSocket();
   return (
     <div className="app">
       <Header />
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/resource/:id" element={<ResourceDetail />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/resource/:id" element={<ResourceDetail />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/audit" element={<AuditLog />} />
+        </Routes>
+      </Suspense>
       <ToastContainer />
     </div>
   );
@@ -40,11 +49,9 @@ export default function App() {
   const [needsAuth, setNeedsAuth] = useState(false);
 
   useEffect(() => {
-    // Restore token from sessionStorage
     const saved = sessionStorage.getItem("nimbus_api_key");
     if (saved) setAuthToken(saved);
 
-    // Check if auth is required
     fetch("/api/providers").then((r) => {
       if (r.status === 401) {
         setNeedsAuth(true);
@@ -62,7 +69,11 @@ export default function App() {
   if (!authChecked) return null;
 
   if (needsAuth) {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Login onLogin={handleLogin} />
+      </Suspense>
+    );
   }
 
   return (

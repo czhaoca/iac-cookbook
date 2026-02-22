@@ -97,6 +97,7 @@ export type ResourceAction = "stop" | "start" | "terminate" | "health_check";
 
 export interface ActionLogEntry {
   id: string;
+  resource_id?: string;
   action_type: string;
   status: string;
   details: Record<string, unknown>;

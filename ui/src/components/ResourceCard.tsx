@@ -7,6 +7,8 @@ interface Props {
   resource: Resource;
   onAction: (id: string, action: ResourceAction) => void;
   actionPending: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -22,13 +24,21 @@ const PROTECTION_ICONS: Record<string, typeof Shield> = {
   ephemeral: ShieldOff,
 };
 
-export function ResourceCard({ resource, onAction, actionPending }: Props) {
+export function ResourceCard({ resource, onAction, actionPending, selected, onSelect }: Props) {
   const statusColor = STATUS_COLORS[resource.status] ?? STATUS_COLORS["unknown"];
   const ProtIcon = PROTECTION_ICONS[resource.protection_level] ?? Shield;
 
   return (
-    <div className="resource-card">
+    <div className={`resource-card${selected ? " resource-card-selected" : ""}`}>
       <div className="card-header">
+        {onSelect && (
+          <input
+            type="checkbox"
+            className="card-checkbox"
+            checked={!!selected}
+            onChange={onSelect}
+          />
+        )}
         <span className="card-type">{resource.resource_type}</span>
         <span className="card-status" style={{ color: statusColor }}>
           ● {resource.status}

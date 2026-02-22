@@ -3,3 +3,12 @@
   background: #0f172a;
   color: #e2e8f0;
 }
+
+.page-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem;
+  color: #64748b;
+  font-size: 1rem;
+}

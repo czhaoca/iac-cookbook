@@ -54,6 +54,26 @@
   margin: 0;
 }
 
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.bulk-select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.bulk-count {
+  color: #3b82f6;
+  font-weight: 500;
+}
+
 .section-title {
   font-size: 1rem;
   font-weight: 600;

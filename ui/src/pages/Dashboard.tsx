@@ -5,11 +5,15 @@ import { ProviderForm, ProviderDeleteButton } from "@/components/ProviderForm";
 import { ResourceCard } from "@/components/ResourceCard";
 import { BudgetOverview } from "@/components/BudgetOverview";
 import { SpendingChart } from "@/components/SpendingChart";
+import { ConfirmModal } from "@/components/ConfirmModal";
+import { showToast } from "@/components/Toasts";
 import type { ResourceAction } from "@/types";
 import "./Dashboard.css";
 
 export function Dashboard() {
   const [showProviderForm, setShowProviderForm] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ id: string; action: ResourceAction; name: string } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const { data: providers = [], isLoading: loadingProviders } = useProviders();
   const { data: resources = [], isLoading: loadingResources } = useResources();
   const actionMut = useResourceAction();
@@ -18,8 +22,57 @@ export function Dashboard() {
   const { data: spending = [] } = useSpending();
   const enforceMut = useEnforceBudget();
 
+  const destructiveActions = new Set<ResourceAction>(["stop", "terminate"]);
+
   const handleAction = (id: string, action: ResourceAction) => {
-    actionMut.mutate({ id, action });
+    if (destructiveActions.has(action)) {
+      const res = resources.find((r) => r.id === id);
+      setPendingAction({ id, action, name: res?.display_name ?? id });
+    } else {
+      actionMut.mutate({ id, action }, {
+        onSuccess: () => showToast(`${action} completed`, "success"),
+      });
+    }
+  };
+
+  const confirmAction = () => {
+    if (!pendingAction) return;
+    actionMut.mutate(
+      { id: pendingAction.id, action: pendingAction.action },
+      {
+        onSuccess: () => {
+          showToast(`${pendingAction.action} completed on ${pendingAction.name}`, "success");
+          setPendingAction(null);
+        },
+        onError: (err: Error) => {
+          showToast(err.message, "error");
+          setPendingAction(null);
+        },
+      },
+    );
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === resources.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(resources.map((r) => r.id)));
+    }
+  };
+
+  const bulkAction = (action: ResourceAction) => {
+    for (const id of selected) {
+      handleAction(id, action);
+    }
+    setSelected(new Set());
   };
 
   const handleSync = (providerId: string) => {
@@ -32,6 +85,17 @@ export function Dashboard() {
 
   return (
     <main className="dashboard">
+      {pendingAction && (
+        <ConfirmModal
+          title={`${pendingAction.action === "terminate" ? "Terminate" : "Stop"} Resource`}
+          message={<>Are you sure you want to <strong>{pendingAction.action}</strong> <strong>{pendingAction.name}</strong>? This action cannot be easily undone.</>}
+          confirmLabel={pendingAction.action === "terminate" ? "Terminate" : "Stop"}
+          confirmVariant="danger"
+          onConfirm={confirmAction}
+          onCancel={() => setPendingAction(null)}
+        />
+      )}
+
       {/* Stats */}
       <section className="stats-bar">
         <div className="stat">
@@ -102,7 +166,24 @@ export function Dashboard() {
 
       {/* Resources */}
       <section className="section">
-        <h2 className="section-title">Resources</h2>
+        <div className="section-header">
+          <h2 className="section-title">Resources</h2>
+          {resources.length > 0 && (
+            <div className="bulk-actions">
+              <label className="bulk-select-all">
+                <input type="checkbox" checked={selected.size === resources.length && resources.length > 0} onChange={toggleSelectAll} />
+                Select all
+              </label>
+              {selected.size > 0 && (
+                <>
+                  <span className="bulk-count">{selected.size} selected</span>
+                  <button className="btn-sm btn-secondary" onClick={() => bulkAction("health_check")}>Health Check</button>
+                  <button className="btn-sm btn-danger" onClick={() => bulkAction("stop")}>Stop Selected</button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
         {loadingResources ? (
           <p className="loading-text">Loading resources…</p>
         ) : resources.length === 0 ? (
@@ -115,6 +196,8 @@ export function Dashboard() {
                 resource={r}
                 onAction={handleAction}
                 actionPending={actionMut.isPending}
+                selected={selected.has(r.id)}
+                onSelect={() => toggleSelect(r.id)}
               />
             ))}
           </div>

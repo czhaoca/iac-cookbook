@@ -1,4 +1,4 @@
-import { Cloud, Activity, AlertTriangle, CheckCircle, Settings } from "lucide-react";
+import { Cloud, Activity, AlertTriangle, CheckCircle, Settings, ScrollText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useHealth } from "@/hooks/useApi";
 import "./Header.css";
@@ -10,8 +10,10 @@ export function Header() {
   return (
     <header className="header">
       <div className="header-left">
-        <Cloud size={28} className="header-icon" />
-        <h1 className="header-title">Nimbus</h1>
+        <Link to="/" className="header-home-link">
+          <Cloud size={28} className="header-icon" />
+          <h1 className="header-title">Nimbus</h1>
+        </Link>
         <span className="header-version">v{health?.version ?? "..."}</span>
       </div>
       <div className="header-right">
@@ -23,6 +25,9 @@ export function Header() {
           )}
         </span>
         <Activity size={18} className="header-pulse" />
+        <Link to="/audit" className="header-settings-link" title="Audit Log">
+          <ScrollText size={18} />
+        </Link>
         <Link to="/settings" className="header-settings-link" title="Settings">
           <Settings size={18} />
         </Link>

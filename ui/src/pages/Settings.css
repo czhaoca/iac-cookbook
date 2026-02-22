@@ -53,3 +53,34 @@
   color: #64748b;
   font-size: 0.8125rem;
 }
+
+.settings-section-title {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.setting-textarea {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 0.8125rem;
+  font-family: monospace;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.setting-input-wide {
+  width: 200px;
+}
+
+.setting-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}

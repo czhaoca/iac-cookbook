@@ -118,3 +118,13 @@
 .card-name-link:hover .card-name {
   color: #60a5fa;
 }
+
+.resource-card-selected {
+  border-color: #3b82f6;
+  background: #1e293b;
+}
+
+.card-checkbox {
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
