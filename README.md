@@ -204,6 +204,13 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
   - [x] Cloudflare DNS: Fixed WAF methods, 12 unit tests, integration test fixes
   - [x] Budget enforcement cron: scheduler with spending/budget/health loops
   - [x] Mobile responsive: CSS breakpoints (480px/768px/1400px)
+- [x] **Phase 11**: Error recovery and resilience (144 tests)
+  - [x] Retry with exponential backoff (configurable attempts, delay, jitter)
+  - [x] Circuit breaker pattern (closed/open/half-open) for all provider adapters
+  - [x] Graceful degradation: ErrorBoundary prevents partial failures from crashing UI
+  - [x] Orchestrator rollback: auto-terminate VM if DNS creation fails
+  - [x] Provider status dashboard: connected/degraded/down indicators on badges
+  - [x] Error log page: source filter, context details, clear all, 20 resilience tests
 
 ## Contributing
 
