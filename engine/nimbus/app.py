@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -16,7 +17,11 @@ async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
     init_db()
     _register_adapters()
+    # Start background spending sync
+    from .services.spending_sync import spending_sync_loop
+    sync_task = asyncio.create_task(spending_sync_loop())
     yield
+    sync_task.cancel()
 
 
 def create_app() -> FastAPI:
@@ -45,6 +50,7 @@ def create_app() -> FastAPI:
     from .api.orchestration import router as orchestration_router
     from .api.ws import router as ws_router
     from .api.backup import router as backup_router
+    from .api.alerts import router as alerts_router
     app.include_router(health_router)
     app.include_router(providers_router, prefix="/api")
     app.include_router(resources_router, prefix="/api")
@@ -52,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(orchestration_router, prefix="/api")
     app.include_router(ws_router)
     app.include_router(backup_router, prefix="/api")
+    app.include_router(alerts_router, prefix="/api")
 
     return app
 
@@ -75,6 +82,24 @@ def _register_adapters() -> None:
     try:
         from .providers.proxmox.adapter import ProxmoxAdapter
         registry.register_adapter("proxmox", ProxmoxAdapter)
+    except ImportError:
+        pass
+
+    try:
+        from .providers.azure.adapter import AzureAdapter
+        registry.register_adapter("azure", AzureAdapter)
+    except ImportError:
+        pass
+
+    try:
+        from .providers.gcp.adapter import GCPAdapter
+        registry.register_adapter("gcp", GCPAdapter)
+    except ImportError:
+        pass
+
+    try:
+        from .providers.aws.adapter import AWSAdapter
+        registry.register_adapter("aws", AWSAdapter)
     except ImportError:
         pass
 

@@ -5,10 +5,15 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from nimbus.config import settings
 from nimbus.db import Base
 from nimbus.models import *  # noqa: F401,F403 — ensure all models are registered
 
 config = context.config
+
+# Override URL from app settings (supports NIMBUS_DATABASE_URL env var)
+config.set_main_option("sqlalchemy.url", settings.effective_database_url)
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 

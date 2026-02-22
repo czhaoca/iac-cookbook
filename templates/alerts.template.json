@@ -1,0 +1,12 @@
+{
+    "webhooks": [
+        "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    ],
+    "email_smtp_host": "smtp.gmail.com",
+    "email_smtp_port": 587,
+    "email_from": "nimbus@yourdomain.com",
+    "email_to": ["you@yourdomain.com"],
+    "email_username": "",
+    "email_password": "",
+    "email_use_tls": true
+}

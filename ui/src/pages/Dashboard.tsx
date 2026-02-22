@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { useProviders, useResources, useResourceAction, useSyncResources, useBudgetStatus, useEnforceBudget } from "@/hooks/useApi";
 import { ProviderBadge } from "@/components/ProviderBadge";
+import { ProviderForm, ProviderDeleteButton } from "@/components/ProviderForm";
 import { ResourceCard } from "@/components/ResourceCard";
 import { BudgetOverview } from "@/components/BudgetOverview";
 import type { ResourceAction } from "@/types";
 import "./Dashboard.css";
 
 export function Dashboard() {
+  const [showProviderForm, setShowProviderForm] = useState(false);
   const { data: providers = [], isLoading: loadingProviders } = useProviders();
   const { data: resources = [], isLoading: loadingResources } = useResources();
   const actionMut = useResourceAction();
@@ -49,22 +52,30 @@ export function Dashboard() {
 
       {/* Providers */}
       <section className="section">
-        <h2 className="section-title">Providers</h2>
+        <div className="section-header">
+          <h2 className="section-title">Providers</h2>
+          <button className="btn-primary btn-sm" onClick={() => setShowProviderForm(true)}>
+            + Add Provider
+          </button>
+        </div>
+        {showProviderForm && <ProviderForm onClose={() => setShowProviderForm(false)} />}
         {loadingProviders ? (
           <p className="loading-text">Loading providers…</p>
         ) : providers.length === 0 ? (
           <p className="empty-text">
-            No providers registered. Use <code>nimbus providers add</code> to register one.
+            No providers registered. Click "Add Provider" or use <code>nimbus providers add</code>.
           </p>
         ) : (
           <div className="provider-grid">
             {providers.map((p) => (
-              <ProviderBadge
-                key={p.id}
-                provider={p}
-                onSync={handleSync}
-                syncing={syncMut.isPending}
-              />
+              <div key={p.id} className="provider-card-wrapper">
+                <ProviderBadge
+                  provider={p}
+                  onSync={handleSync}
+                  syncing={syncMut.isPending}
+                />
+                <ProviderDeleteButton providerId={p.id} />
+              </div>
             ))}
           </div>
         )}

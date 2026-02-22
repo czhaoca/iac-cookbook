@@ -127,3 +127,12 @@ def enforce(provider_id: Optional[str] = None, db: Session = Depends(get_db)):
         "actions_taken": len(actions),
         "details": actions,
     }
+
+
+@router.post("/sync-spending")
+async def trigger_spending_sync(db: Session = Depends(get_db)):
+    """Manually trigger spending sync from all registered providers."""
+    from ..services.spending_sync import sync_spending_once
+
+    result = await sync_spending_once(db)
+    return result

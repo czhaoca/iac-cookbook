@@ -1,0 +1,1 @@
+"""Azure provider adapter stub."""
