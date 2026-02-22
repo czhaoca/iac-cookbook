@@ -183,6 +183,13 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
   - [x] Provider health check with latency measurement
   - [x] E2E smoke tests (full workflow + critical protection)
   - [x] Documentation: getting-started, API reference, deployment guide
+- [x] **Phase 8**: Integration tests, charts, CLI commands, deploy tooling, auth
+  - [x] Integration test framework (OCI/Cloudflare live API, graceful skip)
+  - [x] Spending chart (recharts), toast notifications, Settings page
+  - [x] CLI: orchestrate (vm-dns, lockdown, failover), provision command
+  - [x] Deploy tooling: wait-healthy.sh, checklist, docker-compose validation
+  - [x] Alembic migration 002 (settings table)
+  - [x] API key auth middleware + login page
 
 ## Contributing
 
