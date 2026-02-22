@@ -1,0 +1,11 @@
+# Cloudflare Provider Configuration Template
+# Copy to: local/config/cloudflare-api-token
+# Docs: https://developers.cloudflare.com/fundamentals/api/get-started/create-token/
+#
+# Create an API Token at: https://dash.cloudflare.com/profile/api-tokens
+# Recommended permissions:
+#   - Zone:DNS:Edit (for DNS record management)
+#   - Zone:Zone:Read (for zone listing)
+#
+# Paste your API token below (single line, no quotes):
+your-cloudflare-api-token-here

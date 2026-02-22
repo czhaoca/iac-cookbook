@@ -31,11 +31,8 @@ def status():
     console.print(f"Environment: {settings.environment}")
 
     # Register adapters
-    try:
-        from ..providers.oci.adapter import OCIProviderAdapter
-        registry.register_adapter("oci", OCIProviderAdapter)
-    except ImportError:
-        pass
+    from ..app import _register_adapters
+    _register_adapters()
 
     console.print(f"Supported providers: {', '.join(registry.supported_types) or 'none'}")
 

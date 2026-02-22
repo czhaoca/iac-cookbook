@@ -80,3 +80,10 @@ export const enforceBudget = () =>
     "/budget/enforce",
     { method: "POST" },
   );
+
+// Orchestration
+export const orchestrateLockdown = (providerId: string) =>
+  request<{ stopped: number; skipped: number; steps: unknown[] }>(
+    "/orchestrate/lockdown",
+    { method: "POST", body: JSON.stringify({ provider_id: providerId }) },
+  );

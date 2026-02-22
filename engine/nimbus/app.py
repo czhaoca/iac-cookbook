@@ -42,10 +42,12 @@ def create_app() -> FastAPI:
     from .api.providers import router as providers_router
     from .api.resources import router as resources_router
     from .api.budget import router as budget_router
+    from .api.orchestration import router as orchestration_router
     app.include_router(health_router)
     app.include_router(providers_router, prefix="/api")
     app.include_router(resources_router, prefix="/api")
     app.include_router(budget_router, prefix="/api")
+    app.include_router(orchestration_router, prefix="/api")
 
     return app
 
@@ -58,7 +60,19 @@ def _register_adapters() -> None:
         from .providers.oci.adapter import OCIProviderAdapter
         registry.register_adapter("oci", OCIProviderAdapter)
     except ImportError:
-        pass  # OCI SDK not installed
+        pass
+
+    try:
+        from .providers.cloudflare.adapter import CloudflareAdapter
+        registry.register_adapter("cloudflare", CloudflareAdapter)
+    except ImportError:
+        pass
+
+    try:
+        from .providers.proxmox.adapter import ProxmoxAdapter
+        registry.register_adapter("proxmox", ProxmoxAdapter)
+    except ImportError:
+        pass
 
 
 app = create_app()

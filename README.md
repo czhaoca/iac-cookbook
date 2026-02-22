@@ -168,6 +168,12 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
   - [ ] WebSocket real-time updates
   - [ ] Provider add/edit forms
 - [ ] **Phase 3**: Budget monitoring, spending alerts, auto-enforcement
+  - [x] Budget rules CRUD API + CLI
+  - [x] Budget monitor service (check/enforce/record)
+  - [x] BudgetOverview dashboard component
+  - [x] 15 budget tests (51 total)
+  - [ ] Spending sync from provider APIs (cron)
+  - [ ] Webhook/email alert dispatch
 - [ ] **Phase 4**: Cloudflare + Proxmox adapters, cross-cloud workflows
 - [ ] **Phase 5**: Docker production config, HA/DR, database backup
 
