@@ -28,6 +28,11 @@ async def lifespan(app: FastAPI):
     yield
     for t in tasks:
         t.cancel()
+    for t in tasks:
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
 def create_app() -> FastAPI:

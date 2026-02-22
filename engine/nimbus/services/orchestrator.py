@@ -33,7 +33,12 @@ def provision_vm_with_dns(
     result: dict[str, Any] = {"steps": [], "success": False}
 
     # Step 1: Provision VM
-    vm_adapter = registry.get_adapter(vm_provider_id, db)
+    try:
+        vm_adapter = registry.get_adapter(vm_provider_id, db)
+    except (KeyError, Exception) as e:
+        result["steps"].append({"step": "provision_vm", "status": "failed", "error": f"Provider not found: {e}"})
+        return result
+
     try:
         vm_result = vm_adapter.provision("vm", vm_config)
         result["steps"].append({"step": "provision_vm", "status": "success", "data": vm_result})
@@ -55,23 +60,29 @@ def provision_vm_with_dns(
     # Step 2: Create DNS record
     public_ip = vm_result.get("public_ip") or vm_result.get("tags", {}).get("public_ip")
     if public_ip and dns_provider_id:
-        dns_adapter = registry.get_adapter(dns_provider_id, db)
-        dns_config["content"] = public_ip
-        dns_config.setdefault("type", "A")
         try:
-            dns_result = dns_adapter.provision("dns_record", dns_config)
-            result["steps"].append({"step": "create_dns", "status": "success", "data": dns_result})
+            dns_adapter = registry.get_adapter(dns_provider_id, db)
+        except (KeyError, Exception) as e:
+            result["steps"].append({"step": "create_dns", "status": "failed", "error": f"DNS provider not found: {e}"})
+            dns_adapter = None
 
-            dns_resource = CloudResource(
-                provider_id=dns_provider_id,
-                resource_type="dns_record",
-                external_id=dns_result.get("external_id", ""),
-                display_name=dns_result.get("display_name", ""),
-                status="active",
-            )
-            db.add(dns_resource)
-        except Exception as e:
-            result["steps"].append({"step": "create_dns", "status": "failed", "error": str(e)})
+        if dns_adapter:
+            dns_config["content"] = public_ip
+            dns_config.setdefault("type", "A")
+            try:
+                dns_result = dns_adapter.provision("dns_record", dns_config)
+                result["steps"].append({"step": "create_dns", "status": "success", "data": dns_result})
+
+                dns_resource = CloudResource(
+                    provider_id=dns_provider_id,
+                    resource_type="dns_record",
+                    external_id=dns_result.get("external_id", ""),
+                    display_name=dns_result.get("display_name", ""),
+                    status="active",
+                )
+                db.add(dns_resource)
+            except Exception as e:
+                result["steps"].append({"step": "create_dns", "status": "failed", "error": str(e)})
     else:
         result["steps"].append({"step": "create_dns", "status": "skipped", "reason": "no public IP or DNS provider"})
 
@@ -115,7 +126,11 @@ def budget_lockdown(
         .all()
     )
 
-    adapter = registry.get_adapter(provider_id, db)
+    try:
+        adapter = registry.get_adapter(provider_id, db)
+    except (KeyError, Exception) as e:
+        result["steps"].append({"action": "get_adapter", "status": "error", "error": str(e)})
+        return result
 
     for resource in resources:
         if not resource.auto_terminate:

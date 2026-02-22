@@ -1,9 +1,9 @@
-import { Cloud, Activity, AlertTriangle, CheckCircle, Settings, ScrollText } from "lucide-react";
+import { Cloud, Activity, AlertTriangle, CheckCircle, Settings, ScrollText, LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useHealth } from "@/hooks/useApi";
 import "./Header.css";
 
-export function Header() {
+export function Header({ onLogout }: { onLogout?: () => void }) {
   const { data: health } = useHealth();
   const connected = health?.status === "ok";
 
@@ -31,6 +31,11 @@ export function Header() {
         <Link to="/settings" className="header-settings-link" title="Settings">
           <Settings size={18} />
         </Link>
+        {onLogout && (
+          <button className="header-logout-btn" onClick={onLogout} title="Logout">
+            <LogOut size={18} />
+          </button>
+        )}
       </div>
     </header>
   );

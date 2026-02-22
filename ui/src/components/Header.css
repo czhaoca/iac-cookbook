@@ -81,3 +81,17 @@
   text-decoration: none;
   color: inherit;
 }
+
+.header-logout-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.header-logout-btn:hover {
+  color: #f87171;
+}

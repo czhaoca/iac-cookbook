@@ -53,6 +53,11 @@ class ProxmoxAdapter(ProviderAdapter):
                 k, v = line.split("=", 1)
                 config[k.strip()] = v.strip()
 
+        required = ["PROXMOX_URL", "PROXMOX_TOKEN_ID", "PROXMOX_TOKEN_SECRET"]
+        missing = [k for k in required if k not in config]
+        if missing:
+            raise ValueError(f"Missing required Proxmox config keys: {', '.join(missing)}")
+
         self._base_url = config["PROXMOX_URL"].rstrip("/")
         self._token_id = config["PROXMOX_TOKEN_ID"]
         self._token_secret = config["PROXMOX_TOKEN_SECRET"]

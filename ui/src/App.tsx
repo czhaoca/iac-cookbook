@@ -27,11 +27,11 @@ function PageLoader() {
   return <div className="page-loader">Loading…</div>;
 }
 
-function AppInner() {
+function AppInner({ onLogout }: { onLogout: () => void }) {
   useWebSocket();
   return (
     <div className="app">
-      <Header />
+      <Header onLogout={onLogout} />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -67,6 +67,12 @@ export default function App() {
     setNeedsAuth(false);
   }, []);
 
+  const handleLogout = useCallback(() => {
+    sessionStorage.removeItem("nimbus_api_key");
+    setAuthToken(null);
+    setNeedsAuth(true);
+  }, []);
+
   if (!authChecked) return null;
 
   if (needsAuth) {
@@ -80,7 +86,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AppInner />
+        <AppInner onLogout={handleLogout} />
       </BrowserRouter>
     </QueryClientProvider>
   );

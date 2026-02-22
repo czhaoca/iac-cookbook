@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from ..db import SessionLocal, init_db
+from ..db import SessionLocal
 from ..services.budget_monitor import check_budget, enforce_budget
 from ..services.spending_sync import sync_spending_once
 from ..services.alerts import send_alert
@@ -25,7 +25,6 @@ async def budget_enforcement_loop(interval: int = DEFAULT_BUDGET_INTERVAL) -> No
     logger.info("Budget enforcement loop started (interval=%ds)", interval)
     while True:
         try:
-            init_db()
             db = SessionLocal()
             try:
                 statuses = check_budget(db)
@@ -62,7 +61,6 @@ async def health_check_loop(interval: int = DEFAULT_HEALTH_INTERVAL) -> None:
     logger.info("Health check loop started (interval=%ds)", interval)
     while True:
         try:
-            init_db()
             db = SessionLocal()
             try:
                 from ..models.resource import CloudResource
