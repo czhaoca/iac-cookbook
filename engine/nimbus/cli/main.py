@@ -247,5 +247,83 @@ def resources_sync(provider_id: str):
         db.close()
 
 
+# ---------------------------------------------------------------------------
+# Budget commands
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def budget():
+    """Manage budget rules and spending."""
+    pass
+
+
+@budget.command("status")
+@click.option("--provider", "provider_id", default=None, help="Filter by provider ID")
+def budget_status(provider_id: str | None):
+    """Show current budget status."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from ..db import SessionLocal, init_db
+    from ..services.budget_monitor import check_budget
+
+    init_db()
+    console = Console()
+    db = SessionLocal()
+    try:
+        statuses = check_budget(db, provider_id)
+        if not statuses:
+            console.print("[dim]No budget rules configured.[/dim]")
+            return
+        table = Table(title="Budget Status")
+        table.add_column("Provider")
+        table.add_column("Period")
+        table.add_column("Spent", justify="right")
+        table.add_column("Limit", justify="right")
+        table.add_column("Usage", justify="right")
+        table.add_column("Status")
+        table.add_column("Action")
+        for s in statuses:
+            color = {"ok": "green", "warning": "yellow", "exceeded": "red"}.get(s.status, "white")
+            table.add_row(
+                s.provider_id or "Global", s.period,
+                f"${s.total_spent:.2f}", f"${s.monthly_limit:.2f}",
+                f"{s.utilization:.0%}",
+                f"[{color}]{s.status}[/{color}]",
+                s.action_on_exceed,
+            )
+        console.print(table)
+    finally:
+        db.close()
+
+
+@budget.command("add")
+@click.option("--provider", "provider_id", default=None, help="Provider ID (omit for global)")
+@click.option("--limit", "monthly_limit", required=True, type=float, help="Monthly spend limit (USD)")
+@click.option("--threshold", "alert_threshold", default=0.8, type=float, help="Alert threshold (0.0-1.0)")
+@click.option("--action", "action_on_exceed", default="alert",
+              type=click.Choice(["alert", "scale_down", "terminate_ephemeral", "firewall_lockdown"]),
+              help="Action when budget exceeded")
+def budget_add(provider_id: str | None, monthly_limit: float, alert_threshold: float, action_on_exceed: str):
+    """Add a budget rule."""
+    from ..db import SessionLocal, init_db
+    from ..models.budget import BudgetRule
+
+    init_db()
+    db = SessionLocal()
+    try:
+        rule = BudgetRule(
+            provider_id=provider_id, monthly_limit=monthly_limit,
+            alert_threshold=alert_threshold, action_on_exceed=action_on_exceed,
+        )
+        db.add(rule)
+        db.commit()
+        scope = provider_id or "global"
+        click.echo(f"✔ Budget rule added: ${monthly_limit:.2f}/mo for {scope} (action: {action_on_exceed})")
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     cli()

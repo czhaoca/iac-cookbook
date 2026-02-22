@@ -6,6 +6,10 @@ import type {
   SyncResult,
   HealthStatus,
   ResourceAction,
+  BudgetRule,
+  BudgetRuleCreate,
+  BudgetStatus,
+  SpendingRecord,
 } from "@/types";
 
 const BASE = "/api";
@@ -53,3 +57,26 @@ export const performAction = (id: string, action: ResourceAction) =>
   });
 export const syncResources = (providerId: string) =>
   request<SyncResult>(`/resources/sync/${providerId}`, { method: "POST" });
+
+// Budget Rules
+export const listBudgetRules = () =>
+  request<BudgetRule[]>("/budget/rules?active_only=false");
+export const createBudgetRule = (data: BudgetRuleCreate) =>
+  request<BudgetRule>("/budget/rules", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+export const deleteBudgetRule = (id: string) =>
+  request<void>(`/budget/rules/${id}`, { method: "DELETE" });
+
+// Budget Status & Spending
+export const getBudgetStatus = () => request<BudgetStatus[]>("/budget/status");
+export const listSpending = (providerId?: string) => {
+  const params = providerId ? `?provider_id=${providerId}` : "";
+  return request<SpendingRecord[]>(`/budget/spending${params}`);
+};
+export const enforceBudget = () =>
+  request<{ period: string; actions_taken: number; details: unknown[] }>(
+    "/budget/enforce",
+    { method: "POST" },
+  );

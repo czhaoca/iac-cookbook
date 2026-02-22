@@ -119,3 +119,58 @@ class SyncResult(BaseModel):
     created: int = 0
     updated: int = 0
     errors: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Budget schemas
+# ---------------------------------------------------------------------------
+
+
+class BudgetRuleCreate(BaseModel):
+    provider_id: Optional[str] = Field(None, description="Provider ID, null for global rule")
+    monthly_limit: float = Field(..., gt=0, description="Monthly spend limit in USD")
+    alert_threshold: float = Field(0.8, ge=0.0, le=1.0, description="Alert at this fraction of limit")
+    action_on_exceed: str = Field("alert", description="alert | scale_down | terminate_ephemeral | firewall_lockdown")
+    is_active: bool = True
+
+
+class BudgetRuleUpdate(BaseModel):
+    monthly_limit: Optional[float] = None
+    alert_threshold: Optional[float] = None
+    action_on_exceed: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class BudgetRuleOut(BaseModel):
+    id: str
+    provider_id: Optional[str]
+    monthly_limit: float
+    alert_threshold: float
+    action_on_exceed: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SpendingRecordOut(BaseModel):
+    id: str
+    provider_id: str
+    period: str
+    amount: float
+    currency: str
+    recorded_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BudgetStatus(BaseModel):
+    """Aggregated budget health for a provider or globally."""
+    provider_id: Optional[str]
+    period: str
+    total_spent: float
+    monthly_limit: float
+    utilization: float  # 0.0 - 1.0+
+    status: str  # ok | warning | exceeded
+    action_on_exceed: str
+    alerts: list[str] = Field(default_factory=list)

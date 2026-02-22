@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "@/api/client";
-import type { ResourceAction } from "@/types";
+import type { ResourceAction, BudgetRuleCreate } from "@/types";
 
 export function useHealth() {
   return useQuery({ queryKey: ["health"], queryFn: api.getHealth, refetchInterval: 30_000 });
@@ -32,5 +32,55 @@ export function useSyncResources() {
   return useMutation({
     mutationFn: (providerId: string) => api.syncResources(providerId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["resources"] }),
+  });
+}
+
+// Budget
+export function useBudgetRules() {
+  return useQuery({ queryKey: ["budget-rules"], queryFn: api.listBudgetRules });
+}
+
+export function useBudgetStatus() {
+  return useQuery({
+    queryKey: ["budget-status"],
+    queryFn: api.getBudgetStatus,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useSpending(providerId?: string) {
+  return useQuery({
+    queryKey: ["spending", providerId],
+    queryFn: () => api.listSpending(providerId),
+  });
+}
+
+export function useCreateBudgetRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: BudgetRuleCreate) => api.createBudgetRule(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["budget-rules"] });
+      qc.invalidateQueries({ queryKey: ["budget-status"] });
+    },
+  });
+}
+
+export function useDeleteBudgetRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteBudgetRule(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["budget-rules"] });
+      qc.invalidateQueries({ queryKey: ["budget-status"] });
+    },
+  });
+}
+
+export function useEnforceBudget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.enforceBudget(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["budget-status"] }),
   });
 }

@@ -1,6 +1,7 @@
-import { useProviders, useResources, useResourceAction, useSyncResources } from "@/hooks/useApi";
+import { useProviders, useResources, useResourceAction, useSyncResources, useBudgetStatus, useEnforceBudget } from "@/hooks/useApi";
 import { ProviderBadge } from "@/components/ProviderBadge";
 import { ResourceCard } from "@/components/ResourceCard";
+import { BudgetOverview } from "@/components/BudgetOverview";
 import type { ResourceAction } from "@/types";
 import "./Dashboard.css";
 
@@ -9,6 +10,8 @@ export function Dashboard() {
   const { data: resources = [], isLoading: loadingResources } = useResources();
   const actionMut = useResourceAction();
   const syncMut = useSyncResources();
+  const { data: budgetStatuses = [] } = useBudgetStatus();
+  const enforceMut = useEnforceBudget();
 
   const handleAction = (id: string, action: ResourceAction) => {
     actionMut.mutate({ id, action });
@@ -70,6 +73,16 @@ export function Dashboard() {
             Synced: {syncMut.data.created} created, {syncMut.data.updated} updated
           </p>
         )}
+      </section>
+
+      {/* Budget */}
+      <section className="section">
+        <h2 className="section-title">Budget</h2>
+        <BudgetOverview
+          statuses={budgetStatuses}
+          onEnforce={() => enforceMut.mutate()}
+          enforcing={enforceMut.isPending}
+        />
       </section>
 
       {/* Resources */}

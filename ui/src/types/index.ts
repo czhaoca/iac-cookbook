@@ -56,4 +56,41 @@ export interface HealthStatus {
   version: string;
 }
 
+export interface BudgetRule {
+  id: string;
+  provider_id: string | null;
+  monthly_limit: number;
+  alert_threshold: number;
+  action_on_exceed: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface BudgetRuleCreate {
+  provider_id?: string | null;
+  monthly_limit: number;
+  alert_threshold?: number;
+  action_on_exceed?: string;
+}
+
+export interface SpendingRecord {
+  id: string;
+  provider_id: string;
+  period: string;
+  amount: number;
+  currency: string;
+  recorded_at: string;
+}
+
+export interface BudgetStatus {
+  provider_id: string | null;
+  period: string;
+  total_spent: number;
+  monthly_limit: number;
+  utilization: number;
+  status: "ok" | "warning" | "exceeded";
+  action_on_exceed: string;
+  alerts: string[];
+}
+
 export type ResourceAction = "stop" | "start" | "terminate" | "health_check";
