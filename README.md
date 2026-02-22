@@ -174,7 +174,7 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
   - [x] 15 budget tests (51 total)
   - [ ] Spending sync from provider APIs (cron)
   - [ ] Webhook/email alert dispatch
-- [ ] **Phase 4**: Cloudflare + Proxmox adapters, cross-cloud workflows
+- [x] **Phase 4**: Cloudflare + Proxmox adapters, cross-cloud workflows
 - [ ] **Phase 5**: Docker production config, HA/DR, database backup
 
 ## Contributing
