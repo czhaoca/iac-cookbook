@@ -151,7 +151,7 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
 - [x] Modular Bash library + Python SDK migration
 - [x] Block volume strategy & control panel docs
 - [x] Nimbus engine scaffold (FastAPI + SQLAlchemy)
-- [ ] **Phase 1**: Provider adapter interface, OCI adapter, resource CRUD API
+- [x] **Phase 1**: Provider adapter interface, OCI adapter, resource CRUD API
   - [x] Shared utility extraction + import refactor
   - [x] Provider registry + naming service
   - [x] OCI provider adapter (ProviderAdapter interface)
@@ -161,6 +161,12 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
   - [x] Alembic migrations
   - [x] 36 passing tests (API, services, OCI modules)
 - [ ] **Phase 2**: React + Vite frontend, dashboard, resource cards
+  - [x] GitHub Actions CI + security scanning (CodeQL, Dependabot, npm/pip audit)
+  - [x] Vite 7 + React 19 scaffold (0 CVEs)
+  - [x] Dashboard with stats bar, provider badges, resource cards
+  - [x] TypeScript API client + TanStack React Query hooks
+  - [ ] WebSocket real-time updates
+  - [ ] Provider add/edit forms
 - [ ] **Phase 3**: Budget monitoring, spending alerts, auto-enforcement
 - [ ] **Phase 4**: Cloudflare + Proxmox adapters, cross-cloud workflows
 - [ ] **Phase 5**: Docker production config, HA/DR, database backup

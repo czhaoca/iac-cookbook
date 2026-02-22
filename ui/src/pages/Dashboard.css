@@ -1,0 +1,95 @@
+.dashboard {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+/* Stats bar */
+.stats-bar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat {
+  flex: 1;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.stat-value {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.stat-value.running { color: #4ade80; }
+.stat-value.stopped { color: #facc15; }
+.stat-value.critical { color: #f87171; }
+
+.stat-label {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Sections */
+.section {
+  margin-bottom: 2rem;
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.75rem;
+}
+
+/* Grids */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+/* Text states */
+.loading-text {
+  color: #64748b;
+  font-style: italic;
+}
+
+.empty-text {
+  color: #64748b;
+}
+
+.empty-text code {
+  background: #0f172a;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.85rem;
+}
+
+.success-text {
+  color: #4ade80;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.error-text {
+  color: #f87171;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}

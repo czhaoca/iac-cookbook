@@ -1,0 +1,63 @@
+.provider-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #94a3b8;
+}
+
+.provider-badge.active {
+  border-color: #22c55e44;
+}
+
+.provider-badge.inactive {
+  opacity: 0.6;
+}
+
+.badge-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.badge-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.badge-detail {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.badge-sync {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.badge-sync:hover:not(:disabled) {
+  color: #3b82f6;
+}
+
+.badge-sync:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

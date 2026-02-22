@@ -72,6 +72,9 @@ Before committing, grep for these patterns — any match is a potential leak:
 - Always check if config file exists before sourcing; print helpful error if missing
 - Provide `--help` output in every script
 - Include dry-run mode for destructive operations
+- **ALWAYS reference latest official documentation** when implementing features; do not use deprecated or soon-to-be-deprecated functions, packages, or APIs
+- When choosing package versions, prefer **latest stable release** (not beta/RC); pin exact major versions to avoid breaking changes
+- If a package has known CVEs, document the risk and either upgrade to a patched version or choose an alternative
 
 ## Architecture Decision Records
 
@@ -179,3 +182,14 @@ Do NOT skip the quality review step — it prevents tech debt accumulation.
 - `deploy/` directory for production configs, Proxmox scripts, Nginx configs
 - Database file (SQLite) is mounted as a Docker volume from `local/data/`
 - Credentials mounted from `local/config/` — NEVER baked into Docker images
+
+## CI/CD & Security Scanning
+
+- **GitHub Actions** runs on every push/PR: lint, test, build, security scan
+- **Dependabot** enabled for npm and pip ecosystems — auto-creates PRs for vulnerable dependencies
+- **CodeQL** analysis runs on push to `main` and weekly schedule to detect code-level vulnerabilities
+- **npm audit** and **pip-audit** run in CI to catch known CVEs in dependencies
+- Any HIGH or CRITICAL severity CVE MUST be addressed before merging to main
+- Vite/React ecosystem has had critical CVEs (server-side request forgery, path traversal) — always run on latest patched stable version
+- Production builds MUST NOT expose Vite dev server; use `vite build` + static file serving (Nginx)
+- Frontend MUST be served behind a reverse proxy with security headers (CSP, HSTS, X-Frame-Options)

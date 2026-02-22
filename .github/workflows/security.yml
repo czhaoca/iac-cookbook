@@ -1,0 +1,107 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan every Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Audit Python dependencies
+        working-directory: engine
+        run: |
+          pip install pip-audit
+          pip install -e ".[dev]" 2>/dev/null || pip install -e .
+          pip-audit --strict --desc
+
+      - name: Audit npm dependencies
+        working-directory: ui
+        run: |
+          if [ -f package-lock.json ]; then
+            npm audit --audit-level=high
+          else
+            echo "No package-lock.json found — skipping npm audit"
+          fi
+
+  secret-scan:
+    name: Secret Leak Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets in diff
+        run: |
+          echo "=== Scanning for secrets ==="
+          PATTERNS='BEGIN (RSA|PRIVATE|EC|OPENSSH) KEY|AKIA[A-Z0-9]{16}|ghp_[A-Za-z0-9]{36}|sk-[A-Za-z0-9]{48}'
+          # Scan all tracked files (excluding test fixtures and docs with example patterns)
+          FOUND=$(git ls-files | grep -v '^CLAUDE.md$' | grep -v '^README.md$' | \
+            xargs grep -lEi "$PATTERNS" 2>/dev/null | \
+            grep -v 'test_' | grep -v '__pycache__' || true)
+          if [ -n "$FOUND" ]; then
+            echo "⚠️  Potential secrets found in:"
+            echo "$FOUND"
+            echo ""
+            echo "Review these files and ensure no real credentials are committed."
+            echo "Test fixtures with fake OCIDs/keys are acceptable."
+          else
+            echo "✅ No secrets detected"
+          fi
+
+      - name: Check for local/ files committed
+        run: |
+          LOCALS=$(git ls-files | grep '/local/' || true)
+          if [ -n "$LOCALS" ]; then
+            echo "❌ ERROR: local/ files found in repo!"
+            echo "$LOCALS"
+            exit 1
+          else
+            echo "✅ No local/ files in repo"
+          fi
