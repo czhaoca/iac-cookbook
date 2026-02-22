@@ -42,6 +42,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # API key auth (when NIMBUS_API_KEY is set)
+    from .middleware import ApiKeyMiddleware
+    app.add_middleware(ApiKeyMiddleware)
+
     # Register routers
     from .api.health import router as health_router
     from .api.providers import router as providers_router

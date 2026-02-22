@@ -63,6 +63,13 @@
   margin: 0 0 0.75rem;
 }
 
+.section-subtitle {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #64748b;
+  margin: 1rem 0 0.5rem;
+}
+
 /* Grids */
 .provider-grid {
   display: grid;

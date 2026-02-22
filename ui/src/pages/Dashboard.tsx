@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useProviders, useResources, useResourceAction, useSyncResources, useBudgetStatus, useEnforceBudget } from "@/hooks/useApi";
+import { useProviders, useResources, useResourceAction, useSyncResources, useBudgetStatus, useEnforceBudget, useSpending } from "@/hooks/useApi";
 import { ProviderBadge } from "@/components/ProviderBadge";
 import { ProviderForm, ProviderDeleteButton } from "@/components/ProviderForm";
 import { ResourceCard } from "@/components/ResourceCard";
 import { BudgetOverview } from "@/components/BudgetOverview";
+import { SpendingChart } from "@/components/SpendingChart";
 import type { ResourceAction } from "@/types";
 import "./Dashboard.css";
 
@@ -14,6 +15,7 @@ export function Dashboard() {
   const actionMut = useResourceAction();
   const syncMut = useSyncResources();
   const { data: budgetStatuses = [] } = useBudgetStatus();
+  const { data: spending = [] } = useSpending();
   const enforceMut = useEnforceBudget();
 
   const handleAction = (id: string, action: ResourceAction) => {
@@ -94,6 +96,8 @@ export function Dashboard() {
           onEnforce={() => enforceMut.mutate()}
           enforcing={enforceMut.isPending}
         />
+        <h3 className="section-subtitle">Spending Over Time</h3>
+        <SpendingChart records={spending} />
       </section>
 
       {/* Resources */}

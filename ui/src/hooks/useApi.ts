@@ -84,3 +84,7 @@ export function useEnforceBudget() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["budget-status"] }),
   });
 }
+
+export function useSettings() {
+  return useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+}

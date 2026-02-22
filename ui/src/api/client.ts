@@ -15,11 +15,22 @@ import type {
 
 const BASE = "/api";
 
+let _authToken: string | null = null;
+
+/** Set the API key for all subsequent requests. */
+export function setAuthToken(token: string | null) {
+  _authToken = token;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string>),
+  };
+  if (_authToken) {
+    headers["Authorization"] = `Bearer ${_authToken}`;
+  }
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
@@ -92,3 +103,16 @@ export const orchestrateLockdown = (providerId: string) =>
 // Action Logs
 export const getActionLogs = (resourceId: string) =>
   request<ActionLogEntry[]>(`/resources/${resourceId}/logs`);
+
+// Settings
+export const getSettings = () =>
+  request<Record<string, string>>("/settings");
+export const updateSetting = (key: string, value: string) =>
+  request<{ key: string; value: string }>(`/settings/${key}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+
+// Spending
+export const syncSpending = () =>
+  request<{ synced: number }>("/budget/sync-spending", { method: "POST" });

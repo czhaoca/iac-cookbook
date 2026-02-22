@@ -323,6 +323,146 @@ def budget_add(provider_id: str | None, monthly_limit: float, alert_threshold: f
 
 
 # ---------------------------------------------------------------------------
+# Orchestration commands
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def orchestrate():
+    """Cross-cloud orchestration workflows."""
+    pass
+
+
+@orchestrate.command("vm-dns")
+@click.option("--vm-provider", required=True, help="VM provider ID")
+@click.option("--dns-provider", required=True, help="DNS provider ID")
+@click.option("--vm-name", required=True, help="VM display name")
+@click.option("--vm-type", default="instance", help="VM resource type")
+@click.option("--zone-id", required=True, help="DNS zone ID")
+@click.option("--record-name", required=True, help="DNS record name (e.g. app.example.com)")
+def orchestrate_vm_dns(vm_provider: str, dns_provider: str, vm_name: str,
+                       vm_type: str, zone_id: str, record_name: str):
+    """Provision a VM and create a DNS record pointing to it."""
+    from rich.console import Console
+    from ..db import SessionLocal, init_db
+    from ..services.orchestrator import OrchestratorService
+    from ..services.registry import registry
+    from ..app import _register_adapters
+
+    _register_adapters()
+    init_db()
+    console = Console()
+    db = SessionLocal()
+    try:
+        orch = OrchestratorService(registry, db)
+        result = orch.provision_vm_with_dns(
+            vm_provider_id=vm_provider, dns_provider_id=dns_provider,
+            vm_config={"display_name": vm_name, "resource_type": vm_type},
+            zone_id=zone_id, record_name=record_name,
+        )
+        for step in result.get("steps", []):
+            icon = "✔" if step.get("status") == "ok" else "✗"
+            console.print(f"  {icon} {step.get('step', '')}: {step.get('detail', '')}")
+    finally:
+        db.close()
+
+
+@orchestrate.command("lockdown")
+@click.argument("provider_id")
+def orchestrate_lockdown(provider_id: str):
+    """Emergency lockdown — stop all non-critical resources for a provider."""
+    from rich.console import Console
+    from ..db import SessionLocal, init_db
+    from ..services.orchestrator import OrchestratorService
+    from ..services.registry import registry
+    from ..app import _register_adapters
+
+    _register_adapters()
+    init_db()
+    console = Console()
+    db = SessionLocal()
+    try:
+        orch = OrchestratorService(registry, db)
+        result = orch.lockdown(provider_id)
+        console.print(f"[bold]Lockdown complete:[/bold] {result.get('stopped', 0)} stopped, {result.get('skipped', 0)} skipped")
+        for step in result.get("steps", []):
+            console.print(f"  • {step}")
+    finally:
+        db.close()
+
+
+@orchestrate.command("dns-failover")
+@click.option("--resource-id", required=True, help="Resource ID to failover")
+@click.option("--dns-provider", required=True, help="DNS provider ID")
+@click.option("--zone-id", required=True, help="DNS zone ID")
+@click.option("--record-id", required=True, help="DNS record ID to update")
+@click.option("--new-ip", required=True, help="New IP address")
+@click.option("--record-name", required=True, help="DNS record name")
+def orchestrate_dns_failover(resource_id: str, dns_provider: str, zone_id: str,
+                              record_id: str, new_ip: str, record_name: str):
+    """Update DNS to failover to a new IP."""
+    from rich.console import Console
+    from ..db import SessionLocal, init_db
+    from ..services.orchestrator import OrchestratorService
+    from ..services.registry import registry
+    from ..app import _register_adapters
+
+    _register_adapters()
+    init_db()
+    console = Console()
+    db = SessionLocal()
+    try:
+        orch = OrchestratorService(registry, db)
+        result = orch.dns_failover(
+            resource_id=resource_id, dns_provider_id=dns_provider,
+            zone_id=zone_id, record_id=record_id,
+            new_ip=new_ip, record_name=record_name,
+        )
+        for step in result.get("steps", []):
+            icon = "✔" if step.get("status") == "ok" else "✗"
+            console.print(f"  {icon} {step.get('step', '')}: {step.get('detail', '')}")
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Provision command
+# ---------------------------------------------------------------------------
+
+
+@cli.command()
+@click.argument("provider_id")
+@click.option("--type", "resource_type", default="instance", help="Resource type to provision")
+@click.option("--name", "display_name", required=True, help="Resource display name")
+@click.option("--config", "config_json", default="{}", help="JSON config for provisioning")
+def provision(provider_id: str, resource_type: str, display_name: str, config_json: str):
+    """Provision a new resource on a cloud provider."""
+    import json
+    from rich.console import Console
+    from ..db import SessionLocal, init_db
+    from ..services.registry import registry
+    from ..app import _register_adapters
+
+    _register_adapters()
+    init_db()
+    console = Console()
+    db = SessionLocal()
+    try:
+        config = json.loads(config_json)
+        config["display_name"] = display_name
+        config["resource_type"] = resource_type
+
+        adapter = registry.get_adapter(provider_id, db)
+        result = adapter.provision(config)
+        console.print(f"[green]✔ Provisioned:[/green] {result}")
+    except Exception as e:
+        console.print(f"[red]✗ Provision failed:[/red] {e}")
+        raise SystemExit(1)
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # Backup commands
 # ---------------------------------------------------------------------------
 

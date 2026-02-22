@@ -1,4 +1,5 @@
-import { Cloud, Activity, AlertTriangle, CheckCircle } from "lucide-react";
+import { Cloud, Activity, AlertTriangle, CheckCircle, Settings } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useHealth } from "@/hooks/useApi";
 import "./Header.css";
 
@@ -22,6 +23,9 @@ export function Header() {
           )}
         </span>
         <Activity size={18} className="header-pulse" />
+        <Link to="/settings" className="header-settings-link" title="Settings">
+          <Settings size={18} />
+        </Link>
       </div>
     </header>
   );

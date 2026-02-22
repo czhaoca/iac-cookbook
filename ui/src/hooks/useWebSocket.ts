@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { showToast } from "@/components/Toasts";
 
 type ResourceEvent = {
   type: "resource_change";
@@ -35,6 +36,7 @@ export function useWebSocket() {
             queryClient.invalidateQueries({ queryKey: ["resources"] });
             queryClient.invalidateQueries({ queryKey: ["providers"] });
             queryClient.invalidateQueries({ queryKey: ["budget-status"] });
+            showToast(`Resource ${data.resource_id}: ${data.action}`, "info");
           }
         } catch {
           // ignore non-JSON messages

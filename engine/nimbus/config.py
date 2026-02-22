@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Auth — set NIMBUS_API_KEY to enable API key auth
+    api_key: Optional[str] = None
+
     # Paths
     repo_root: Path = _find_repo_root()
 
