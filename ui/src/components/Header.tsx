@@ -1,4 +1,4 @@
-import { Cloud, Activity, AlertTriangle, CheckCircle, Settings, ScrollText, LogOut } from "lucide-react";
+import { Cloud, Activity, AlertTriangle, CheckCircle, Settings, ScrollText, LogOut, Bug } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useHealth } from "@/hooks/useApi";
 import "./Header.css";
@@ -25,6 +25,9 @@ export function Header({ onLogout }: { onLogout?: () => void }) {
           )}
         </span>
         <Activity size={18} className="header-pulse" />
+        <Link to="/errors" className="header-settings-link" title="Error Log">
+          <Bug size={18} />
+        </Link>
         <Link to="/audit" className="header-settings-link" title="Audit Log">
           <ScrollText size={18} />
         </Link>

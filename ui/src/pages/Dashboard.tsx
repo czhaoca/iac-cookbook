@@ -1,11 +1,12 @@
 import { useState, useMemo } from "react";
-import { useProviders, useResources, useResourceAction, useSyncResources, useBudgetStatus, useEnforceBudget, useSpending } from "@/hooks/useApi";
+import { useProviders, useResources, useResourceAction, useSyncResources, useBudgetStatus, useEnforceBudget, useSpending, useProviderStatus } from "@/hooks/useApi";
 import { ProviderBadge } from "@/components/ProviderBadge";
 import { ProviderForm, ProviderDeleteButton } from "@/components/ProviderForm";
 import { ResourceCard } from "@/components/ResourceCard";
 import { BudgetOverview } from "@/components/BudgetOverview";
 import { SpendingChart } from "@/components/SpendingChart";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { showToast } from "@/components/Toasts";
 import type { ResourceAction } from "@/types";
 import "./Dashboard.css";
@@ -22,6 +23,16 @@ export function Dashboard() {
   const { data: budgetStatuses = [] } = useBudgetStatus();
   const { data: spending = [] } = useSpending();
   const enforceMut = useEnforceBudget();
+  const { data: providerStatusData } = useProviderStatus();
+
+  // Map provider_id → status for badge display
+  const providerStatusMap = useMemo(() => {
+    const map: Record<string, "connected" | "degraded" | "down" | "unknown"> = {};
+    for (const ps of providerStatusData?.providers ?? []) {
+      map[ps.provider_id] = ps.status;
+    }
+    return map;
+  }, [providerStatusData]);
 
   const filteredResources = useMemo(
     () => providerFilter ? resources.filter((r) => r.provider_id === providerFilter) : resources,
@@ -165,6 +176,7 @@ export function Dashboard() {
                     provider={p}
                     onSync={handleSync}
                     syncing={syncMut.isPending}
+                    status={providerStatusMap[p.id]}
                   />
                   {stats && (
                     <div className="provider-resource-counts">
@@ -192,6 +204,7 @@ export function Dashboard() {
       </section>
 
       {/* Budget */}
+      <ErrorBoundary fallback={<section className="section"><h2 className="section-title">Budget</h2><p className="error-text">⚠️ Budget data unavailable</p></section>}>
       <section className="section">
         <h2 className="section-title">Budget</h2>
         <BudgetOverview
@@ -202,8 +215,10 @@ export function Dashboard() {
         <h3 className="section-subtitle">Spending Over Time</h3>
         <SpendingChart records={spending} />
       </section>
+      </ErrorBoundary>
 
       {/* Resources */}
+      <ErrorBoundary fallback={<section className="section"><h2 className="section-title">Resources</h2><p className="error-text">⚠️ Resource list unavailable</p></section>}>
       <section className="section">
         <div className="section-header">
           <h2 className="section-title">
@@ -247,6 +262,7 @@ export function Dashboard() {
           <p className="error-text">{actionMut.error.message}</p>
         )}
       </section>
+      </ErrorBoundary>
     </main>
   );
 }

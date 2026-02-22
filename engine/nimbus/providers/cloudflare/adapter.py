@@ -23,8 +23,10 @@ CF_API = "https://api.cloudflare.com/client/v4"
 class CloudflareAdapter(ProviderAdapter):
     """Cloudflare provider — manages DNS records and zone info."""
 
-    _token: str | None = None
-    _zones: dict[str, str] = {}  # zone_name -> zone_id cache
+    def __init__(self) -> None:
+        super().__init__()
+        self._token: str | None = None
+        self._zones: dict[str, str] = {}  # zone_name -> zone_id cache
 
     @property
     def provider_type(self) -> str:

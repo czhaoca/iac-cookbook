@@ -14,6 +14,7 @@ class OCIProviderAdapter(ProviderAdapter):
     """Oracle Cloud Infrastructure provider adapter."""
 
     def __init__(self) -> None:
+        super().__init__()
         self._clients: Optional[OCIClients] = None
         self._compartment_id: str = ""
 

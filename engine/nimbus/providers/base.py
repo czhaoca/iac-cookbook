@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+from nimbus.services.resilience import CircuitBreaker, CircuitBreakerError, error_tracker, retry
+
+logger = logging.getLogger(__name__)
+
 
 class ProviderAdapter(ABC):
-    """Interface that all cloud provider adapters must implement."""
+    """Interface that all cloud provider adapters must implement.
+
+    Includes built-in resilience: retry with backoff and circuit breaker.
+    Subclasses can use ``_resilient_call`` to wrap API calls.
+    """
+
+    def __init__(self) -> None:
+        # Circuit breaker name is set lazily via provider_type property
+        self._circuit_breaker: CircuitBreaker | None = None
+
+    def _get_circuit_breaker(self) -> CircuitBreaker:
+        if self._circuit_breaker is None:
+            self._circuit_breaker = CircuitBreaker(
+                failure_threshold=5,
+                reset_timeout=60.0,
+                name=self.provider_type,
+            )
+        return self._circuit_breaker
 
     @property
     @abstractmethod
@@ -52,3 +74,33 @@ class ProviderAdapter(ABC):
     def health_check(self, resource_id: str) -> dict[str, Any]:
         """Optional: check resource health. Default returns unknown status."""
         return {"status": "unknown", "resource_id": resource_id}
+
+    # -- Resilience helpers ------------------------------------------------
+
+    def _resilient_call(self, func, *args, **kwargs):
+        """Execute *func* with retry + circuit breaker protection.
+
+        Retries transient failures up to 3 times with exponential backoff.
+        Circuit breaker trips after 5 consecutive failures and rejects
+        calls for 60 s before probing recovery.
+        """
+        @retry(max_attempts=3, base_delay=1.0, retryable_exceptions=(Exception,))
+        def _inner():
+            return self._get_circuit_breaker().call(func, *args, **kwargs)
+
+        try:
+            return _inner()
+        except CircuitBreakerError:
+            raise
+        except Exception as e:
+            error_tracker.record(
+                source=f"provider.{self.provider_type}",
+                error=e,
+                context={"function": func.__name__, "args_summary": str(args)[:200]},
+            )
+            raise
+
+    @property
+    def circuit_status(self) -> dict[str, Any]:
+        """Return the circuit breaker status for monitoring."""
+        return self._get_circuit_breaker().get_status()

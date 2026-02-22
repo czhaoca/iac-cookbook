@@ -173,3 +173,21 @@
   font-size: 0.85rem;
   margin-top: 0.5rem;
 }
+
+/* Error boundary fallback */
+.error-boundary-fallback {
+  padding: 1.5rem;
+  border: 1px dashed #f87171;
+  border-radius: 8px;
+  text-align: center;
+  color: #f87171;
+}
+.error-boundary-fallback button {
+  margin-top: 0.5rem;
+  padding: 0.4rem 1rem;
+  border: 1px solid #f87171;
+  background: transparent;
+  color: #f87171;
+  border-radius: 4px;
+  cursor: pointer;
+}

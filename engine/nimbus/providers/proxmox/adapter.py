@@ -22,11 +22,13 @@ logger = logging.getLogger(__name__)
 class ProxmoxAdapter(ProviderAdapter):
     """Proxmox VE provider — manages VMs on self-hosted Proxmox clusters."""
 
-    _base_url: str = ""
-    _token_id: str = ""
-    _token_secret: str = ""
-    _node: str = ""
-    _verify_ssl: bool = False
+    def __init__(self) -> None:
+        super().__init__()
+        self._base_url: str = ""
+        self._token_id: str = ""
+        self._token_secret: str = ""
+        self._node: str = ""
+        self._verify_ssl: bool = False
 
     @property
     def provider_type(self) -> str:

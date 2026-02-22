@@ -67,3 +67,43 @@ def provider_health_check(provider_id: str | None = None, db: Session = Depends(
     """Check health and latency of registered providers."""
     from ..services.health import check_provider_health
     return check_provider_health(db, provider_id)
+
+
+@router.get("/status/resilience")
+def provider_resilience_status(db: Session = Depends(get_db)):
+    """Return circuit breaker and error status for all registered providers."""
+    from ..services.resilience import error_tracker
+
+    statuses = []
+    providers = registry.list_providers(db, active_only=True)
+    for p in providers:
+        try:
+            adapter = registry.get_adapter(p.id, db)
+            cb_status = adapter.circuit_status
+        except Exception:
+            cb_status = {"state": "unknown", "name": p.provider_type}
+
+        recent_errors = error_tracker.get_errors(
+            source=f"provider.{p.provider_type}", limit=5,
+        )
+        statuses.append({
+            "provider_id": p.id,
+            "provider_type": p.provider_type,
+            "display_name": p.display_name,
+            "circuit_breaker": cb_status,
+            "recent_errors": len(recent_errors),
+            "status": _derive_provider_status(cb_status),
+        })
+    return {"providers": statuses, "total_errors": error_tracker.count}
+
+
+def _derive_provider_status(cb: dict) -> str:
+    """Map circuit breaker state to a user-friendly status."""
+    state = cb.get("state", "unknown")
+    if state == "closed":
+        return "connected"
+    elif state == "half_open":
+        return "degraded"
+    elif state == "open":
+        return "down"
+    return "unknown"

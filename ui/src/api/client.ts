@@ -147,3 +147,33 @@ export const updateAlertConfig = (data: AlertConfigData) =>
   });
 export const testAlert = () =>
   request<Record<string, unknown>>("/alerts/test", { method: "POST", body: JSON.stringify({}) });
+
+// Provider resilience status
+export interface ProviderStatus {
+  provider_id: string;
+  provider_type: string;
+  display_name: string;
+  circuit_breaker: { state: string; failure_count: number; failure_threshold: number };
+  recent_errors: number;
+  status: "connected" | "degraded" | "down" | "unknown";
+}
+export const getProviderStatus = () =>
+  request<{ providers: ProviderStatus[]; total_errors: number }>("/providers/status/resilience");
+
+// Error log
+export interface ErrorEntry {
+  timestamp: number;
+  source: string;
+  error_type: string;
+  message: string;
+  context: Record<string, unknown>;
+}
+export const getErrors = (source?: string, limit?: number) => {
+  const qs = new URLSearchParams();
+  if (source) qs.set("source", source);
+  if (limit) qs.set("limit", String(limit));
+  const q = qs.toString();
+  return request<{ errors: ErrorEntry[]; total: number }>(`/errors${q ? `?${q}` : ""}`);
+};
+export const clearErrors = () =>
+  request<void>("/errors", { method: "DELETE" });

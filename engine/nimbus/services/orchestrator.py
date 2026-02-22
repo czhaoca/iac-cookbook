@@ -21,6 +21,7 @@ def provision_vm_with_dns(
     dns_provider_id: str,
     vm_config: dict[str, Any],
     dns_config: dict[str, Any],
+    rollback_on_dns_failure: bool = True,
 ) -> dict[str, Any]:
     """Provision a VM and create a DNS record pointing to it.
 
@@ -29,8 +30,11 @@ def provision_vm_with_dns(
     2. Extract public IP from result
     3. Create DNS A record via dns_provider adapter
     4. Track both resources in DB
+
+    If rollback_on_dns_failure is True and DNS creation fails,
+    the VM is terminated to avoid orphaned resources.
     """
-    result: dict[str, Any] = {"steps": [], "success": False}
+    result: dict[str, Any] = {"steps": [], "success": False, "rolled_back": False}
 
     # Step 1: Provision VM
     try:
@@ -59,12 +63,14 @@ def provision_vm_with_dns(
 
     # Step 2: Create DNS record
     public_ip = vm_result.get("public_ip") or vm_result.get("tags", {}).get("public_ip")
+    dns_failed = False
     if public_ip and dns_provider_id:
         try:
             dns_adapter = registry.get_adapter(dns_provider_id, db)
         except (KeyError, Exception) as e:
             result["steps"].append({"step": "create_dns", "status": "failed", "error": f"DNS provider not found: {e}"})
             dns_adapter = None
+            dns_failed = True
 
         if dns_adapter:
             dns_config["content"] = public_ip
@@ -83,19 +89,39 @@ def provision_vm_with_dns(
                 db.add(dns_resource)
             except Exception as e:
                 result["steps"].append({"step": "create_dns", "status": "failed", "error": str(e)})
+                dns_failed = True
     else:
         result["steps"].append({"step": "create_dns", "status": "skipped", "reason": "no public IP or DNS provider"})
 
+    # Rollback: if DNS failed and rollback is enabled, terminate the VM
+    if dns_failed and rollback_on_dns_failure:
+        try:
+            vm_external_id = vm_result.get("external_id", "")
+            vm_adapter.terminate(vm_external_id)
+            vm_resource.status = "terminated"
+            result["steps"].append({"step": "rollback_vm", "status": "success", "reason": "DNS creation failed"})
+            result["rolled_back"] = True
+            logger.warning("Rolled back VM %s after DNS failure", vm_external_id)
+        except Exception as rollback_err:
+            result["steps"].append({"step": "rollback_vm", "status": "failed", "error": str(rollback_err)})
+            logger.error("Rollback failed for VM %s: %s", vm_result.get("external_id"), rollback_err)
+
     # Log action
+    overall = "success"
+    if result.get("rolled_back"):
+        overall = "rolled_back"
+    elif any(s["status"] == "failed" for s in result["steps"]):
+        overall = "partial"
+
     db.add(ActionLog(
         resource_id=vm_resource.id,
         action_type="orchestrate_vm_dns",
-        status="success" if all(s["status"] == "success" for s in result["steps"]) else "partial",
+        status=overall,
         initiated_by="user",
         details=result,
     ))
     db.commit()
-    result["success"] = True
+    result["success"] = not result.get("rolled_back", False)
     result["vm_resource_id"] = vm_resource.id
     return result
 
@@ -183,7 +209,10 @@ def update_dns_for_resource(
     record_name: str,
 ) -> dict[str, Any]:
     """Update a DNS record to point to a new IP (e.g., for failover)."""
-    dns_adapter = registry.get_adapter(dns_provider_id, db)
+    try:
+        dns_adapter = registry.get_adapter(dns_provider_id, db)
+    except (KeyError, Exception) as e:
+        return {"success": False, "error": f"DNS provider not found: {e}"}
 
     if not hasattr(dns_adapter, "update_dns_record"):
         return {"success": False, "error": "DNS adapter doesn't support update"}

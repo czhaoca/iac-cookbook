@@ -88,3 +88,19 @@ export function useEnforceBudget() {
 export function useSettings() {
   return useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
 }
+
+export function useProviderStatus() {
+  return useQuery({
+    queryKey: ["provider-status"],
+    queryFn: api.getProviderStatus,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useErrors(source?: string) {
+  return useQuery({
+    queryKey: ["errors", source],
+    queryFn: () => api.getErrors(source, 100),
+    refetchInterval: 30_000,
+  });
+}

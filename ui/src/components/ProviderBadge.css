@@ -61,3 +61,13 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Provider status indicator */
+.provider-status-dot {
+  margin-left: 0.35rem;
+  font-size: 0.7rem;
+}
+.status-connected { color: #22c55e; }
+.status-degraded { color: #f59e0b; }
+.status-down { color: #f87171; }
+.status-unknown { color: #64748b; }

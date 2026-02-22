@@ -12,6 +12,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default:
 const ResourceDetail = lazy(() => import("@/pages/ResourceDetail").then((m) => ({ default: m.ResourceDetail })));
 const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
 const AuditLog = lazy(() => import("@/pages/AuditLog").then((m) => ({ default: m.AuditLog })));
+const ErrorLog = lazy(() => import("@/pages/ErrorLog").then((m) => ({ default: m.ErrorLog })));
 const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
 
 const queryClient = new QueryClient({
@@ -38,6 +39,7 @@ function AppInner({ onLogout }: { onLogout: () => void }) {
           <Route path="/resource/:id" element={<ResourceDetail />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/audit" element={<AuditLog />} />
+          <Route path="/errors" element={<ErrorLog />} />
         </Routes>
       </Suspense>
       <ToastContainer />
