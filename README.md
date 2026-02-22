@@ -176,6 +176,13 @@ Atomic boot volume replacement — no instance deletion, supports x86 and ARM.
 - [x] **Phase 4**: Cloudflare + Proxmox adapters, cross-cloud workflows
 - [x] **Phase 5**: Docker production config, HA/DR, database backup
 - [x] **Phase 6**: Spending sync, alerts, provider forms, cloud stubs, Postgres path
+- [x] **Phase 7**: Resource detail page, settings, WAF, health, E2E tests, docs
+  - [x] Resource detail page (/resource/:id) with action history
+  - [x] Settings model + CRUD API (cron intervals, config)
+  - [x] Cloudflare WAF integration (firewall rules, zone lockdown)
+  - [x] Provider health check with latency measurement
+  - [x] E2E smoke tests (full workflow + critical protection)
+  - [x] Documentation: getting-started, API reference, deployment guide
 
 ## Contributing
 
